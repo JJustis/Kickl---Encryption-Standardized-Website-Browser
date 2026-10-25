@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Kickl.Browser/Kickl.Browser.csproj" />
+    <Project Path="src/Kickl.Cli/Kickl.Cli.csproj" />
+    <Project Path="src/Kickl.Core/Kickl.Core.csproj" />
+    <Project Path="src/Kickl.Device/Kickl.Device.csproj" />
+    <Project Path="src/Kickl.DongleReceiver/Kickl.DongleReceiver.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Kickl.RegistrySigner/Kickl.RegistrySigner.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Kickl.Core.Tests/Kickl.Core.Tests.csproj" />
+  </Folder>
+</Solution>

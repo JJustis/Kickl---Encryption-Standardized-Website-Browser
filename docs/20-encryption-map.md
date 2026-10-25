@@ -1,0 +1,170 @@
+# 20 — Encryption map: what is plaintext, and where
+
+> Scope: the **slice as implemented today** (`src/Kickl.Core`), not the target design.
+> Anything labelled "gap" is a real difference between the two.
+>
+> Visual version: [`diagrams/encryption-map.svg`](diagrams/encryption-map.svg)
+
+## 1. The key chain
+
+```
+  PIN ──Argon2id (64 MiB, t=3, p=4, salt)──► KEK ──AES-256-GCM open──► master (32 B)
+                                                                  │
+                       ┌──────────────────────────────────────────┤
+                       │                                          │
+        HKDF(master, fresh salt, "kickl/v1/session")      AES-256-GCM open
+                       │                                          │
+                       ▼                                          ▼
+                 session key (RAM)                            doc key (RAM)
+                       │                                          │
+        ┌──────────────┼──────────────┐                           │
+        ▼              ▼              ▼                           ▼
+   region keys    stego keys    keystroke cells            blob plaintext
+   HKDF(...,      HKDF(...,      AES-GCM(counter,           AES-GCM(docKey)
+   "regions")     seed)          AAD=session|field|slot)
+
+Session opening also creates a fresh P-256 identity key pair; it is never persisted.
+PFS lookups and mesh links use separate per-connection ephemeral P-256 pairs.
+```
+
+New keystores record the Argon2id version and parameters. Existing slice keystores using
+`pbkdf2-sha256-slice` or the earlier Argon2id p=1 profile remain unlockable and are atomically
+rewrapped with Argon2id p=4 after a successful unlock. If migration cannot be written, the unlocked
+master remains usable and the legacy keystore remains in place. Argon2id timing, RFC vector coverage,
+and performance validation still require release review.
+
+Everything symmetric is **AES-256-GCM**. RSA-3072 is used only to wrap the AES key on the
+ownership USB and to sign title statements; ECDH is used only for PFS lookup key agreement.
+
+## 2. Three lanes
+
+```
+┌─────────────────────────────┐  ┌─────────────────────────────┐  ┌─────────────────────────────┐
+│ AT REST (disk / USB)        │  │ IN MEMORY (unlocked session)│  │ ON THE WIRE                 │
+├─────────────────────────────┤  ├─────────────────────────────┤  ├─────────────────────────────┤
+│ keystore.json               │  │ PIN (transient)             │  │ PFS lookup                  │
+│  salt, nonce                │  │ master key (32 B)           │  │  ephemeral P-256 ECDH       │
+│  WrappedMaster  [ciphertext]│  │ session key + subkeys       │  │  HKDF-SHA384                │
+│                             │  │ doc key (after first blob)  │  │  AES-256-GCM query/response │
+│ doc.json                    │  │                             │  │  observer: id, sizes, timing│
+│  Markup         [PLAINTEXT] │  │ page text (public)          │  │  observer: NOT host/status  │
+│  blobs          [ciphertext]│  │ one revealed region         │  │                             │
+│  DocKey         [wrapped]   │  │ blob text (then buffer zero)│  │ mesh link                   │
+│                             │  │ keystroke chars (Reveal)    │  │  ephemeral P-256 ECDH       │
+│ vault/*.png                 │  │ ownership token (Prove)     │  │  HKDF-SHA256 → 2 dir keys   │
+│  AES-GCM envelope in LSB    │  │ search query + result list  │  │  AES-GCM frames + counters  │
+│  public tEXt seed           │  │                             │  │  RSA signs, never transports│
+│                             │  │ zeroised on Lock()          │  │                             │
+│                             │  │                             │  │                             │
+│ owner USB                   │  │                             │  │ clearnet http(s)            │
+│  RSA private key [AES-GCM]│  │                             │  │  NOT covered by Kickl keys  │
+│  WrappedKey (RSA-OAEP)      │  │                             │  │  system browser + TLS only  │
+│  TokenCiphertext (AES-GCM)  │  │                             │  │                             │
+└─────────────────────────────┘  └─────────────────────────────┘  └─────────────────────────────┘
+```
+
+## 3. Opening `jttp://pinwheelexplained.com`
+
+```
+host string (RAM, plaintext)
+   │
+   ├─► PFS: ECDH P-256 → HKDF-SHA384 → AES-256-GCM
+   │        wire = ciphertext only; session invalidated after response
+   │
+   ├─► registry record (decrypted in RAM): status, doc file, owner, badge,
+   │        title, headline, tags, updated
+   │
+   ├─► doc.json read
+   │        Markup ......................... PLAINTEXT (public structure)
+   │        blobs[id].Ciphertext ........... AES-256-GCM
+   │        DocKey.Ciphertext .............. AES-256-GCM under master
+   │
+   ├─► master ──AES-GCM open──► doc key (RAM)
+   │
+   ├─► render markup ...................... page text on screen
+   │
+   ├─► click a region
+   │        region key = HKDF(session, page seed, "kickl/v1/regions")
+   │        AES-GCM opens ONLY that region → plaintext in RAM + on screen
+   │
+   └─► unlock a blob
+            AES-GCM open → plaintext byte[] → UTF-8 string → buffer zeroed
+            (the string itself is GC-managed and cannot be zeroed — gap)
+```
+
+## 4. Plaintext inventory
+
+### 4.1 Plaintext in RAM, briefly
+
+| Plaintext | Created by | Lifetime |
+|---|---|---|
+| PIN | user input | until KDF completes |
+| Master key | `Keystore.Unlock` | until `Lock()` / process exit |
+| Session key + subkeys | `SessionSecret.Create` / HKDF | until `Lock()` |
+| Doc key | first `UnlockBlob` | until `Lock()` |
+| Page markup / text | `DocumentStore.Load` + `Kml.Parse` | until page changes |
+| One revealed region | `SealedPage.Reveal` | until page changes; kept in the page's reveal map |
+| Blob text | `UnlockBlob` | byte buffer zeroed; decoded string lives until GC |
+| Keystroke characters | `KeystrokeShield.Reveal` | returned `char[]`, caller wipes |
+| Ownership token | `OwnershipAuthority.Prove` | inside the call, then zeroed |
+| Lookup hostname or search query | `BrowserSession.Lookup` / `Search` | duration of the call |
+| Search result metadata | `Search` / renderer | query response, then GC |
+| Session P-256 private key | `SessionSecret.Create` | until `Lock()`; public half is public |
+
+### 4.2 Plaintext on disk (by design or gap)
+
+| Plaintext | Where | Why |
+|---|---|---|
+| **KML page markup** | `doc.json` → `Markup` | **slice choice**: markup is public structure; regions are sealed only in memory. Target design seals pages at rest (`docs/18`) — tracked gap. |
+| Legacy draft markup | `profiles/<profile-id>/drafts/` | Migrated files may be plaintext; the browser composer now builds markup in memory and does not write a draft file |
+| Registry names, status, owner id, badge id, title, headline, tags | `shared/registry.json` | the phonebook and the live index are public; that is the point of the registry |
+| Profile name | `profiles/<profile-id>/` directory name | Local account picker needs a stable label; profile names are not encrypted |
+| Salts, nonces, session ids, versions | keystore / docs / stego PNG | metadata required to decrypt |
+| Stego seed | PNG `tEXt` chunk | not a secret: payload key = HKDF(session, seed); seed only keys the permutation |
+| **Owner USB RSA private key** | `kickl-owner-<site>.key` | Argon2id-derived AES-256-GCM envelope; passphrase required to unlock |
+| CLI output / redirected logs | wherever you send it | `open` prints page text by design |
+
+### 4.3 Never plaintext at rest
+
+- master key, session key, doc key
+- blob contents (`b1`, `b2`, `manifest`)
+- stego envelope JSON
+- ownership token
+- keystroke cells
+- saved reading items (`profiles/<profile-id>/private/saved-items.kpf`)
+- configured news feed sources (`profiles/<profile-id>/private/news-sources.kpf`)
+- home ad-slot preference (`profiles/<profile-id>/private/home-ad-pref.kpf`)
+- publisher records and signed tokens (`profiles/<profile-id>/ads/publishers.kpf`)
+- PFS lookup and search queries/responses
+- mesh frames
+
+These profile files use purpose-separated HKDF keys derived from the unlocked master key and
+AES-256-GCM with the file purpose authenticated as associated data. Legacy plaintext saved-item,
+feed-source, home-slot preference, and publisher files migrate to encrypted profile files after unlock.
+
+### 4.4 Outside the crypto boundary
+
+None of the cryptography below protects these:
+
+- OS swap, hibernation file, crash dumps, pagefile
+- screen / GPU / compositor / screenshots / remote support
+- clipboard, IME, accessibility tools, keyloggers
+- IP addresses, DNS, traffic timing and sizes
+- remote server memory, backups, logs
+- a compromised OS, firmware, or USB port
+
+## 5. Known gaps (do not claim otherwise)
+
+1. **Page markup is plaintext at rest.** `SealedDocument.Markup` is serialized as-is. Only blobs are encrypted. Sealed page regions exist in memory (`SealedPage`) and in the site cache envelope, not in `doc.json`.
+2. **Blob text becomes a managed string.** The byte buffer is zeroed, but `Encoding.UTF8.GetString` creates a GC string that cannot be wiped. Production needs a pinned render buffer.
+3. **Trusted-device ceremony is not integrated into hardware.** The software encrypts owner keys with an Argon2id-derived AES-GCM key and supports RSA-wrapped AES-GCM proof packets, but the CLI prompt runs on its own host. A physical first-device prompt, receiver dongle storage/pairing, radio transport, replay management, and legacy plaintext-key migration remain unfinished.
+4. **No memory locking.** Keys can be swapped or included in a crash dump; `mlock`/`VirtualLock` is not used.
+5. **Region keys are session-long.** No per-reveal rekey; one session key protects every region of a page.
+6. **PFS hides names, not traffic shape.** The server sees query/response lengths, session id, and timing.
+7. **The live index is publish-time, not crawl-time.** `updated` changes when a site is published; there is no scheduled re-fetch yet.
+8. **Stego is not the security boundary.** The AES-GCM payload is. The PNG can be copied; without the session it will not open.
+9. **On-screen text is plaintext.** The renderer must display it; screen capture and shoulder-surfing are out of scope.
+10. **Clearnet is a different lane.** `http(s)://` is handed to the system browser and gets none of this.
+11. **Profile protection is incomplete.** Each local profile has its own key and directory, but profile names, published site markup, legacy drafts, and some profile-owned data remain plaintext. Published markup is the site's public payload; the shared public registry is intentionally outside profile encryption. Recovery, cloud sync, and complete at-rest coverage remain unfinished.
+
+> Rule: if a byte is not in the green/blue lanes above, it is not protected by Kickl.

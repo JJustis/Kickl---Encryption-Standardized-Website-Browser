@@ -1,0 +1,7 @@
+site: pinwheelexplained.com
+document: site.kml
+blobs: b1.txt, b2.txt, manifest.txt
+canary: PINWHEEL-CANARY-7f3a
+network: jttp (Kickl registry, local mirror in this build)
+scripts: none, by format
+proof-of-control: absent (name is shown as unverified)

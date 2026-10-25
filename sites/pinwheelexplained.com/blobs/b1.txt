@@ -1,0 +1,19 @@
+PINWHEEL-CANARY-7f3a
+
+This note is a canary. If you can read this without unlocking the session, something
+went wrong: the blob was stored in plaintext, or the key leaked into a file, a log, or
+a crash dump.
+
+What the slice guarantees today:
+  - the blob on disk is AES-256-GCM ciphertext;
+  - the document key is wrapped by the profile master key;
+  - the master key is wrapped by a key derived from your PIN;
+  - locking zeroises the session and document keys in memory.
+
+What it does not guarantee yet:
+  - Argon2id (this build uses PBKDF2 with an explicit kdf id);
+  - per-recipient HPKE (this build models a single local reader);
+  - signatures on the registry record (integrity is checked, authorship is not);
+  - protection from a kernel keylogger or a camera pointed at the screen.
+
+Say the last part out loud. A browser that claims to defeat those is lying.

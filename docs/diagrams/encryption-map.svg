@@ -1,0 +1,286 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1720" viewBox="0 0 1400 1720" role="img" aria-labelledby="title desc">
+  <title id="title">Kickl encryption map: where plaintext exists</title>
+  <desc id="desc">Three lanes showing at-rest, in-memory and on-the-wire data, the key hierarchy, and an inventory of where plaintext exists.</desc>
+  <rect width="1400" height="1720" fill="#0b0f14"/>
+
+  <style>
+    .h { font: 700 16px "Segoe UI", Arial, sans-serif; fill: #e6edf3; }
+    .sub { font: 400 13px "Segoe UI", Arial, sans-serif; fill: #8b9bb0; }
+    .m { font: 400 12.5px Consolas, "Courier New", monospace; fill: #a8b8c8; }
+    .pt { font: 600 12.5px Consolas, "Courier New", monospace; fill: #7ee787; }
+    .ct { font: 400 12.5px Consolas, "Courier New", monospace; fill: #79c0ff; }
+    .key { font: 400 12.5px Consolas, "Courier New", monospace; fill: #f2cc60; }
+    .warn { font: 400 12.5px Consolas, "Courier New", monospace; fill: #ff7b72; }
+    .box { fill: #0f1620; stroke: #263241; stroke-width: 1; }
+    .colhead { font: 700 14px "Segoe UI", Arial, sans-serif; fill: #c9d6e4; letter-spacing: .08em; }
+    .invh { font: 700 15px "Segoe UI", Arial, sans-serif; }
+    .inv { font: 400 13px Consolas, "Courier New", monospace; fill: #b6c4d4; }
+    .note { font: 400 13px "Segoe UI", Arial, sans-serif; fill: #8b9bb0; }
+    .arrow { stroke: #43536a; stroke-width: 1.5; fill: none; }
+  </style>
+
+  <defs>
+    <marker id="a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L8 4 L0 8 z" fill="#43536a"/>
+    </marker>
+  </defs>
+
+  <text x="24" y="38" class="h" style="font-size:24px;letter-spacing:.04em">KICKL · ENCRYPTION MAP</text>
+  <text x="24" y="64" class="sub">Where plaintext exists, and where it does not. Slice build · 2026-10-24 · AES-256-GCM everywhere symmetric.</text>
+
+  <g transform="translate(900,30)">
+    <rect x="0" y="0" width="11" height="11" fill="#7ee787"/><text x="17" y="10" class="sub">plaintext</text>
+    <rect x="105" y="0" width="11" height="11" fill="#79c0ff"/><text x="122" y="10" class="sub">ciphertext</text>
+    <rect x="220" y="0" width="11" height="11" fill="#f2cc60"/><text x="237" y="10" class="sub">key material</text>
+    <rect x="350" y="0" width="11" height="11" fill="#ff7b72"/><text x="367" y="10" class="sub">gap / warning</text>
+  </g>
+
+  <!-- key hierarchy strip -->
+  <g>
+    <rect x="24" y="92" width="160" height="60" rx="8" fill="#0f1a14" stroke="#2ea043"/>
+    <text x="40" y="118" class="pt">PIN</text>
+    <text x="40" y="138" class="m">user input, RAM</text>
+
+    <path d="M184 122 H216" class="arrow" marker-end="url(#a)"/>
+    <rect x="216" y="92" width="160" height="60" rx="8" fill="#1a160c" stroke="#8a6d1f"/>
+    <text x="232" y="118" class="key">Argon2id</text>
+    <text x="232" y="138" class="m">64 MiB · t=3, p=4</text>
+
+    <path d="M376 122 H408" class="arrow" marker-end="url(#a)"/>
+    <rect x="408" y="92" width="160" height="60" rx="8" fill="#1a160c" stroke="#8a6d1f"/>
+    <text x="424" y="118" class="key">KEK</text>
+    <text x="424" y="138" class="m">RAM only</text>
+
+    <path d="M568 122 H600" class="arrow" marker-end="url(#a)"/>
+    <rect x="600" y="92" width="160" height="60" rx="8" fill="#1a160c" stroke="#8a6d1f"/>
+    <text x="616" y="118" class="key">master (32 B)</text>
+    <text x="616" y="138" class="m">unwrapped by KEK</text>
+
+    <path d="M760 122 H792" class="arrow" marker-end="url(#a)"/>
+    <rect x="792" y="92" width="160" height="60" rx="8" fill="#1a160c" stroke="#8a6d1f"/>
+    <text x="808" y="118" class="key">session key</text>
+    <text x="808" y="138" class="m">HKDF, fresh salt</text>
+
+    <path d="M952 122 H984" class="arrow" marker-end="url(#a)"/>
+    <rect x="984" y="92" width="160" height="60" rx="8" fill="#101827" stroke="#1f6feb"/>
+    <text x="1000" y="118" class="ct">object keys</text>
+    <text x="1000" y="138" class="m">region · stego</text>
+
+    <path d="M1144 122 H1176" class="arrow" marker-end="url(#a)"/>
+    <rect x="1176" y="92" width="160" height="60" rx="8" fill="#101827" stroke="#1f6feb"/>
+    <text x="1192" y="118" class="ct">AES-256-GCM</text>
+    <text x="1192" y="138" class="m">the only AEAD</text>
+  </g>
+
+  <!-- column headers -->
+  <g>
+    <rect x="24" y="178" width="436" height="36" rx="6" fill="#121a24"/>
+    <text x="38" y="202" class="colhead">AT REST · DISK / USB</text>
+    <rect x="482" y="178" width="436" height="36" rx="6" fill="#121a24"/>
+    <text x="496" y="202" class="colhead">IN MEMORY · UNLOCKED</text>
+    <rect x="940" y="178" width="436" height="36" rx="6" fill="#121a24"/>
+    <text x="954" y="202" class="colhead">ON THE WIRE</text>
+  </g>
+
+  <!-- DISK column -->
+  <g transform="translate(24,232)">
+    <rect class="box" width="436" height="118" rx="8"/>
+    <text x="16" y="26" class="h">1 · keystore.json</text>
+    <text x="16" y="50" class="pt">plaintext stored: none</text>
+    <text x="16" y="70" class="m">salt · nonce · WrappedMaster</text>
+    <text x="16" y="89" class="ct">WrappedMaster = AES-256-GCM(KEK, master)</text>
+    <text x="16" y="108" class="key">master only exists after unlock</text>
+  </g>
+
+  <g transform="translate(24,364)">
+    <rect class="box" width="436" height="150" rx="8"/>
+    <text x="16" y="26" class="h">2 · doc.json</text>
+    <text x="16" y="50" class="pt">Markup = KML PLAINTEXT   ← gap</text>
+    <text x="16" y="70" class="ct">blobs = AES-256-GCM(docKey)</text>
+    <text x="16" y="90" class="ct">DocKey = AES-256-GCM(master)</text>
+    <text x="16" y="110" class="m">integrity = SHA-256 over both</text>
+    <text x="16" y="132" class="warn">page text is readable without a key</text>
+  </g>
+
+  <g transform="translate(24,528)">
+    <rect class="box" width="436" height="112" rx="8"/>
+    <text x="16" y="26" class="h">3 · vault/*.png</text>
+    <text x="16" y="50" class="ct">payload = AES-GCM(CacheEnvelope)</text>
+    <text x="16" y="70" class="m">keys = HKDF(session, fresh seed)</text>
+    <text x="16" y="90" class="pt">plaintext stored: none</text>
+    <text x="16" y="108" class="key">tEXt seed is public metadata</text>
+  </g>
+
+  <g transform="translate(24,654)">
+    <rect class="box" width="436" height="150" rx="8"/>
+    <text x="16" y="26" class="h">4 · owner USB key</text>
+    <text x="16" y="50" class="warn">RSA-3072 PKCS#8 — plaintext file</text>
+    <text x="16" y="70" class="ct">WrappedKey = RSA-OAEP(AES-256 key)</text>
+    <text x="16" y="90" class="ct">token = AES-GCM(AES data key)</text>
+    <text x="16" y="110" class="m">token plaintext only during Prove</text>
+    <text x="16" y="132" class="warn">file perms only; no PIN wrap   ← gap</text>
+  </g>
+
+  <g transform="translate(24,818)">
+    <rect class="box" width="436" height="104" rx="8"/>
+    <text x="16" y="26" class="h">5 · registry.json</text>
+    <text x="16" y="50" class="pt">name · status · ownerId · badgeId</text>
+    <text x="16" y="70" class="m">the phonebook is public by design</text>
+    <text x="16" y="90" class="m">no page content is stored here</text>
+  </g>
+
+  <!-- RAM column -->
+  <g transform="translate(482,232)">
+    <rect class="box" width="436" height="122" rx="8"/>
+    <text x="16" y="26" class="h">6 · unlock</text>
+    <text x="16" y="50" class="pt">PIN (transient)</text>
+    <text x="16" y="70" class="key">PIN → KEK → master (32 B)</text>
+    <text x="16" y="90" class="key">master → HKDF → session key</text>
+    <text x="16" y="110" class="m">all zeroed by Lock()</text>
+  </g>
+
+  <g transform="translate(482,368)">
+    <rect class="box" width="436" height="104" rx="8"/>
+    <text x="16" y="26" class="h">7 · session subkeys</text>
+    <text x="16" y="50" class="key">region keys · stego keys</text>
+    <text x="16" y="70" class="key">keystroke uses session key</text>
+    <text x="16" y="90" class="m">HKDF-separated, RAM only</text>
+  </g>
+
+  <g transform="translate(482,486)">
+    <rect class="box" width="436" height="122" rx="8"/>
+    <text x="16" y="26" class="h">8 · resolve + open</text>
+    <text x="16" y="50" class="pt">hostname in RAM before sealing</text>
+    <text x="16" y="70" class="ct">PFS query on wire is ciphertext</text>
+    <text x="16" y="90" class="m">registry record decrypted in RAM</text>
+    <text x="16" y="110" class="pt">markup / public text on screen</text>
+  </g>
+
+  <g transform="translate(482,622)">
+    <rect class="box" width="436" height="104" rx="8"/>
+    <text x="16" y="26" class="h">9 · click a region</text>
+    <text x="16" y="50" class="ct">other regions stay sealed</text>
+    <text x="16" y="70" class="pt">one region opens → RAM + screen</text>
+    <text x="16" y="90" class="m">AAD binds site · index · kind</text>
+  </g>
+
+  <g transform="translate(482,740)">
+    <rect class="box" width="436" height="122" rx="8"/>
+    <text x="16" y="26" class="h">10 · unlock a blob</text>
+    <text x="16" y="50" class="ct">docKey unwrap (AES-GCM)</text>
+    <text x="16" y="70" class="ct">blob open (AES-GCM)</text>
+    <text x="16" y="90" class="pt">plaintext byte[] → RAM</text>
+    <text x="16" y="110" class="warn">buffer wiped; decoded string is GC ← gap</text>
+  </g>
+
+  <g transform="translate(482,876)">
+    <rect class="box" width="436" height="104" rx="8"/>
+    <text x="16" y="26" class="h">11 · keystrokes</text>
+    <text x="16" y="50" class="ct">one AES-GCM cell per character</text>
+    <text x="16" y="70" class="m">counter nonce + AAD(session,field,slot)</text>
+    <text x="16" y="90" class="pt">Reveal → char[] briefly</text>
+  </g>
+
+  <g transform="translate(482,994)">
+    <rect class="box" width="436" height="104" rx="8"/>
+    <text x="16" y="26" class="h">12 · stego cache</text>
+    <text x="16" y="50" class="ct">un-LSB → AES-GCM open</text>
+    <text x="16" y="70" class="pt">CacheEnvelope JSON in RAM</text>
+    <text x="16" y="90" class="m">fresh seed re-seals every save</text>
+  </g>
+
+  <!-- WIRE column -->
+  <g transform="translate(940,232)">
+    <rect class="box" width="436" height="158" rx="8"/>
+    <text x="16" y="26" class="h">A · PFS lookup + search</text>
+    <text x="16" y="50" class="m">ephemeral P-256 ECDH, both sides</text>
+    <text x="16" y="70" class="m">→ HKDF-SHA384 → AES-256-GCM</text>
+    <text x="16" y="90" class="ct">sees: session id, sizes, timing</text>
+    <text x="16" y="110" class="ct">does NOT see: name, tag, or status</text>
+    <text x="16" y="132" class="key">lookup/search key dies on return</text>
+  </g>
+
+  <g transform="translate(940,404)">
+    <rect class="box" width="436" height="176" rx="8"/>
+    <text x="16" y="26" class="h">B · device mesh link</text>
+    <text x="16" y="50" class="m">ephemeral P-256 ECDH per link</text>
+    <text x="16" y="70" class="m">→ HKDF-SHA256 → two directional keys</text>
+    <text x="16" y="90" class="m">frames: AES-GCM + strict counters</text>
+    <text x="16" y="110" class="ct">sees: device ids, frame sizes</text>
+    <text x="16" y="132" class="key">RSA-3072 signs; never transports</text>
+    <text x="16" y="154" class="m">one-time keys die with the link</text>
+  </g>
+
+  <g transform="translate(940,594)">
+    <rect class="box" width="436" height="112" rx="8"/>
+    <text x="16" y="26" class="h">C · clearnet http(s)</text>
+    <text x="16" y="50" class="warn">NOT Kickl. Leaves this stack.</text>
+    <text x="16" y="70" class="warn">system browser + TLS only</text>
+    <text x="16" y="90" class="m">no registry, no seals, no Kickl keys</text>
+  </g>
+
+  <g transform="translate(940,720)">
+    <rect class="box" width="436" height="150" rx="8"/>
+    <text x="16" y="26" class="h">D · metadata, still visible</text>
+    <text x="16" y="50" class="warn">registry sizes / versions / times</text>
+    <text x="16" y="70" class="warn">traffic timing · IP addresses</text>
+    <text x="16" y="90" class="warn">PNG size + public seed</text>
+    <text x="16" y="112" class="m">metadata is not encrypted here</text>
+  </g>
+
+  <!-- plaintext inventory -->
+  <text x="24" y="1150" class="h" style="font-size:20px">Where plaintext actually exists</text>
+  <text x="380" y="1150" class="sub">Read this as the complete list. Anything not here is ciphertext or derived material.</text>
+
+  <g transform="translate(24,1168)">
+    <rect class="box" width="660" height="228" rx="8" stroke="#2ea043"/>
+    <text x="18" y="30" class="invh" fill="#7ee787">PLAINTEXT IN RAM, BRIEFLY</text>
+    <text x="18" y="58" class="inv">PIN while deriving the KEK</text>
+    <text x="18" y="82" class="inv">master, session and doc key after unlock</text>
+    <text x="18" y="106" class="inv">page markup + the one region you revealed</text>
+    <text x="18" y="130" class="inv">blob text (byte[] wiped, decoded string is not)</text>
+    <text x="18" y="154" class="inv">keystroke chars at Reveal</text>
+    <text x="18" y="178" class="inv">ownership token during Prove</text>
+    <text x="18" y="202" class="inv">hostname / search query during PFS</text>
+  </g>
+
+  <g transform="translate(716,1168)">
+    <rect class="box" width="660" height="228" rx="8" stroke="#8a6d1f"/>
+    <text x="18" y="30" class="invh" fill="#f2cc60">PLAINTEXT ON DISK — DESIGN OR GAP</text>
+    <text x="18" y="58" class="inv">KML Markup inside doc.json                ← gap</text>
+    <text x="18" y="82" class="inv">registry name / status / owner / badge ids</text>
+    <text x="18" y="106" class="inv">salt, nonce, session id, version</text>
+    <text x="18" y="130" class="inv">stego seed in the PNG tEXt chunk</text>
+    <text x="18" y="154" class="inv">owner USB RSA private key                  ← gap</text>
+    <text x="18" y="178" class="inv">anything you redirect CLI output into</text>
+    <text x="18" y="202" class="inv">—</text>
+  </g>
+
+  <g transform="translate(24,1412)">
+    <rect class="box" width="660" height="216" rx="8" stroke="#1f6feb"/>
+    <text x="18" y="30" class="invh" fill="#79c0ff">NEVER PLAINTEXT AT REST</text>
+    <text x="18" y="58" class="inv">master key · session key · doc key</text>
+    <text x="18" y="82" class="inv">blob contents</text>
+    <text x="18" y="106" class="inv">stego envelope JSON</text>
+    <text x="18" y="130" class="inv">ownership token</text>
+    <text x="18" y="154" class="inv">keystroke cells</text>
+    <text x="18" y="178" class="inv">PFS lookup traffic · mesh frames</text>
+  </g>
+
+  <g transform="translate(716,1412)">
+    <rect class="box" width="660" height="216" rx="8" stroke="#8b2f2f"/>
+    <text x="18" y="30" class="invh" fill="#ff7b72">OUTSIDE THE CRYPTO BOUNDARY</text>
+    <text x="18" y="58" class="inv">swap / hibernation / crash dumps</text>
+    <text x="18" y="82" class="inv">screen, GPU, compositor, screenshots</text>
+    <text x="18" y="106" class="inv">clipboard, IME, accessibility, keyloggers</text>
+    <text x="18" y="130" class="inv">IP addresses, DNS, traffic shape</text>
+    <text x="18" y="154" class="inv">remote server memory and backups</text>
+    <text x="18" y="178" class="inv">a compromised OS, firmware, or USB port</text>
+  </g>
+
+  <g transform="translate(24,1640)">
+    <rect x="0" y="0" width="1352" height="64" rx="6" fill="#141b25" stroke="#263241"/>
+    <text x="16" y="26" class="note">Rule: if a byte is not in the green or amber lists, it is not plaintext.</text>
+    <text x="16" y="48" class="note">Slice caveat: page markup is public structure at rest; sealing whole pages is a tracked gap (docs/18).</text>
+  </g>
+</svg>

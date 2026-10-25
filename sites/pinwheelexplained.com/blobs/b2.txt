@@ -1,0 +1,22 @@
+Session model (slice)
+
+unlock:
+  pin --PBKDF2-SHA256(210k, salt)--> KEK
+  KEK --AES-256-GCM unwrap--> profile master (32 bytes)
+  master --HKDF-SHA512(salt, "kickl/v1/session")--> session key
+
+document:
+  doc key: 32 random bytes
+  blob:    AES-256-GCM(doc key, nonce, AAD = "kickl/v1/blob|host|id")
+  doc key: AES-256-GCM(master, nonce, AAD = "kickl/v1/doc-key|host")
+
+keystrokes:
+  cell_i = AES-256-GCM(session key, nonce = counter_i,
+                       AAD = "kickl/v1/keystroke|session|field|counter_i")
+  revealed only into a caller-owned buffer, then zeroised.
+
+Known deviations from docs/03:
+  - PBKDF2 instead of Argon2id (no BCL Argon2id)
+  - SHA-256 integrity instead of Ed25519 signatures
+  - single local reader instead of HPKE recipients
+Each deviation is recorded in the checklist and must close before G2.

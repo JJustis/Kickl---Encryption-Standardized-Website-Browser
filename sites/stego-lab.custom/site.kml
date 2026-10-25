@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<kml v="1" site="stego-lab.custom" epoch="1">
+  <head>
+    <title>Stego lab</title>
+    <meta name="headline" content="A cache that looks like a picture and opens only inside this session."/>
+    <meta name="tags" content="stego, png, cache, sealed-pages"/>
+  </head>
+  <body>
+    <page>
+      <h1>Stego lab</h1>
+      <badge>vault notes · lossless carrier · keyed placement</badge>
+      <p>The cache carrier is a PNG because JPEG throws away exactly the low bits steganography
+      needs. A fresh 32-byte seed chooses the bit permutation for every write.</p>
+      <p>The envelope is encrypted before it is embedded, so the carrier reveals neither the site
+      name nor the page body. A different session cannot read it, and a refreshed write changes
+      the whole carrier.</p>
+      <code>PNG · keyed LSB permutation · AES-256-GCM envelope</code>
+    </page>
+  </body>
+</kml>

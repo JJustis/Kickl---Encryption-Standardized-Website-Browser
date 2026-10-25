@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<kml v="1" site="nickles-testnet.custom" epoch="1">
+  <head>
+    <title>Nickles testnet</title>
+    <meta name="headline" content="Donation-ranked placements with no impressions, clicks, or profiles."/>
+    <meta name="tags" content="nickles, ads, testnet, privacy"/>
+  </head>
+  <body>
+    <page>
+      <h1>Nickles testnet</h1>
+      <badge>ad network slice · testnet only · no tracking</badge>
+      <p>A placement is a sealed card in the lower-left slot. Its rank comes from donations, not
+      from an auction, and the browser never reports an impression or a click back to the ad
+      network.</p>
+      <p>This is a testnet surface. Nothing here is money, and the production settlement path is
+      still an open question.</p>
+    </page>
+  </body>
+</kml>

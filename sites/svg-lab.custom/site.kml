@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<kml v="1" site="svg-lab.custom" epoch="1">
+  <head>
+    <title>Inline SVG lab</title>
+    <meta name="description" content="A div filled with inline SVG, not a stylesheet."/>
+    <meta name="headline" content="A sealed page that draws its own gradient card with inline SVG."/>
+    <meta name="author" content="Kickl demo"/>
+    <meta name="date" content="2026-10-24"/>
+    <meta name="location" content="screen one"/>
+    <meta name="tags" content="svg, inline, sealed-pages, demo"/>
+  </head>
+  <body>
+    <page>
+      <h1>Inline SVG lab</h1>
+      <badge>sealed page · inline svg · no css</badge>
+      <p>This card is a div filled with an SVG fragment carried inside the sealed page.
+      There is no stylesheet, no script, and no remote image request.</p>
+
+      <html><![CDATA[
+<center>
+  <div>
+    <svg xmlns="http://www.w3.org/2000/svg" width="720" height="220" viewBox="0 0 720 220">
+      <defs>
+        <linearGradient id="sunrise" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#78c8c8" stop-opacity="1"/>
+          <stop offset="100%" stop-color="#ff7a64" stop-opacity="1"/>
+        </linearGradient>
+        <linearGradient id="shade" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stop-color="#071016" stop-opacity="0"/>
+          <stop offset="100%" stop-color="#071016" stop-opacity="0.62"/>
+        </linearGradient>
+      </defs>
+      <rect x="0" y="0" width="720" height="220" rx="18" fill="url(#sunrise)"/>
+      <rect x="0" y="100" width="720" height="120" rx="18" fill="url(#shade)"/>
+      <circle cx="590" cy="78" r="42" fill="#fff3d6" opacity="0.9"/>
+      <path d="M0 172 C120 128, 210 214, 340 166 S560 118, 720 158 L720 220 L0 220 Z"
+            fill="#0b1b2c" opacity="0.72"/>
+      <text x="28" y="58" fill="#071016" font-size="29" font-family="sans-serif"
+            font-weight="bold">Inline SVG is the point.</text>
+      <text x="30" y="86" fill="#071016" font-size="14" font-family="sans-serif">
+        A div can be filled with drawing commands instead of a CSS layout system.
+      </text>
+      <text x="30" y="196" fill="#dbe7f3" font-size="12" font-family="sans-serif">
+        sealed · jttp://svg-lab.custom/ · no scripts · no external requests
+      </text>
+    </svg>
+  </div>
+</center>
+]]></html>
+
+      <h2>What the renderer keeps</h2>
+      <p>Static SVG shapes, gradients, text, paths, and data-URL images are rendered locally.
+      Links and form controls are inert by construction. The package hash is verified before
+      any of this drawing code reaches the view.</p>
+    </page>
+  </body>
+</kml>

@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<kml v="1" site="pinwheelexplained.com" epoch="1">
+  <head>
+    <title>Pinwheel, explained</title>
+    <meta name="description" content="A sealed site on the Kickl network, with the actual point written down."/>
+    <meta name="headline" content="A sealed site on Kickl's own network, with the actual point written down."/>
+    <meta name="tags" content="kickl, privacy, sealed-pages, pinwheel, registry"/>
+  </head>
+  <body>
+    <page>
+      <h1>Pinwheel, explained</h1>
+      <badge>sealed document · no scripts · no trackers</badge>
+
+      <p>This page lives at <b>jttp://pinwheelexplained.com</b>. That address is not a
+      website on the open internet. It is a name in Kickl's own phonebook, served from a
+      sealed document that this browser authenticates before it renders a single word.</p>
+
+      <hr/>
+
+      <h2>What "sealed" means here</h2>
+      <p>The page you are reading is plain structure. The things worth hiding are blobs:
+      notes, files, keys, mail, chat. Each blob is encrypted with <b>AES-256-GCM</b> under a
+      document key, and that document key is wrapped for the reader. Without the user key,
+      a blob is just noise with a tag that will not open.</p>
+
+      <p>There is no JavaScript on this surface. Not "disabled by a setting" — absent from the
+      format. A KML document cannot run code, read the clipboard, query your device, or phone
+      home, because the renderer has no instruction that does those things.</p>
+
+      <blob id="b1" mime="text/plain"/>
+
+      <h2>The cipher rules</h2>
+      <p>One symmetric cipher does every job: <b>AES-256-GCM</b>. There is no second AEAD in the
+      product, so there is one nonce discipline, one tag check, and one implementation to audit.</p>
+      <code>AES-256-GCM          blobs, cache, keystrokes, transport, ownership token
+RSA-3072-OAEP        wraps the AES key for the ownership USB
+P-256 ECDH + HKDF    fresh lookup keys; ML-KEM-768 joins at the handshake</code>
+
+      <p>RSA and ECDH do not encrypt your content. They wrap or agree on AES keys. Every byte you
+      actually care about is sealed with AES-256-GCM.</p>
+
+      <blob id="b2" mime="text/plain"/>
+
+      <h2>What this slice actually proves</h2>
+      <p>This build is a vertical slice, not the finished browser. It proves the spine:
+      a name resolves through the registry, a document loads and verifies its integrity, a
+      PIN unlocks the profile, and a sealed blob opens only inside an unlocked session.</p>
+
+      <quote>If the blob opens without the user key, the design is wrong. If it opens with the
+      user key and leaves plaintext on disk, the implementation is wrong.</quote>
+
+      <hr/>
+
+      <h2>What comes next</h2>
+      <p>Real post-quantum recipient wrapping, the steganographic vault, mail and chat,
+      Nickles, the arcade half of the home page, and the Linux shell. The order is in the
+      roadmap, and the checklist gets a tick only when there is evidence.</p>
+
+      <file id="manifest" mime="text/plain"/>
+
+      <button intent="lock">Lock this session</button>
+    </page>
+  </body>
+</kml>

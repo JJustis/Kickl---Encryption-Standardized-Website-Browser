@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<kml v="1" site="mesh-lab.custom" epoch="1">
+  <head>
+    <title>Mesh lab</title>
+    <meta name="headline" content="Two handhelds meet, derive fresh keys, and forget each other when the link dies."/>
+    <meta name="tags" content="mesh, pfs, device, privacy"/>
+  </head>
+  <body>
+    <page>
+      <h1>Mesh lab</h1>
+      <badge>field notes · link layer · no persistent session</badge>
+      <p>A mesh link starts with an ephemeral P-256 agreement. The offer and accept are signed
+      with the stable device key, so both sides know who they are talking to without making the
+      conversation recoverable later.</p>
+      <quote>Temporalness is the feature: the link, its keys, and its counters die together.</quote>
+      <p>The two directional AES-256-GCM keys are derived once and never written down. A replayed
+      frame fails its counter check and the link closes.</p>
+    </page>
+  </body>
+</kml>

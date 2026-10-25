@@ -1,0 +1,134 @@
+{
+  "schemaVersion": 2,
+  "policy": {
+    "intake": "Every package is pinned to an exact version, locked in packages.lock.json, and recorded here with licence, source, purpose and review notes before it ships.",
+    "banned": [
+      "Any package with an open Critical/High advisory",
+      "Packages that phone home, obfuscated packages, or install scripts that download binaries",
+      "GPL/AGPL code in a shipped binary without legal review"
+    ],
+    "reviewOwner": "security (see docs/10-security-program.md §5.5)"
+  },
+  "dependencies": [
+    {
+      "name": "Avalonia",
+      "version": "11.3.22",
+      "license": "MIT",
+      "source": "https://www.nuget.org/packages/Avalonia/11.3.22",
+      "purpose": "Cross-platform UI shell for Kickl.Browser and the device emulator (ADR-001)",
+      "platforms": ["windows", "linux"],
+      "transitiveDependencies": ["Avalonia.Skia", "Avalonia.Win32", "Avalonia.X11", "Avalonia.Native", "Avalonia.FreeDesktop", "Avalonia.Remote.Protocol", "Avalonia.BuildServices", "SkiaSharp", "HarfBuzzSharp"],
+      "review": "Pinned official Avalonia release. Managed UI library; native rendering arrives through SkiaSharp/HarfBuzzSharp below. Licence and transitive tree inspected from packages.lock.json."
+    },
+    {
+      "name": "Avalonia.Desktop",
+      "version": "11.3.22",
+      "license": "MIT",
+      "source": "https://www.nuget.org/packages/Avalonia.Desktop/11.3.22",
+      "purpose": "Desktop platform bootstrap (windowing, input) for the browser and emulator",
+      "platforms": ["windows", "linux"],
+      "transitiveDependencies": ["Avalonia", "Avalonia.Win32", "Avalonia.X11", "Avalonia.Native"],
+      "review": "Pinned official Avalonia release; part of the same reviewed family."
+    },
+    {
+      "name": "Avalonia.Themes.Fluent",
+      "version": "11.3.22",
+      "license": "MIT",
+      "source": "https://www.nuget.org/packages/Avalonia.Themes.Fluent/11.3.22",
+      "purpose": "Base control theme that the Kickl token/theme layer overrides",
+      "platforms": ["windows", "linux"],
+      "transitiveDependencies": ["Avalonia"],
+      "review": "Pinned official Avalonia release; no native code."
+    },
+    {
+      "name": "Avalonia.Svg.Skia",
+      "version": "11.3.0",
+      "license": "MIT",
+      "source": "https://www.nuget.org/packages/Avalonia.Svg.Skia/11.3.0",
+      "purpose": "Static inline SVG rendering for the sanitized sealed-page visual block (ADR-015)",
+      "platforms": ["windows", "linux"],
+      "transitiveDependencies": ["Avalonia", "Svg.Skia", "Svg.Model", "Svg.Custom", "ShimSkiaSharp", "SkiaSharp"],
+      "review": "Community package; renders already-sanitized static SVG only. Must be audited alongside the SVG sanitizer before release. Adds native Skia dependencies."
+    },
+    {
+      "name": "HtmlAgilityPack",
+      "version": "1.13.1",
+      "license": "MIT",
+      "source": "https://www.nuget.org/packages/HtmlAgilityPack/1.13.1",
+      "purpose": "Parsing the sanitized inline HTML/SVG fragment before native rendering (ADR-015)",
+      "platforms": ["any supported .NET 10 platform"],
+      "transitiveDependencies": [],
+      "review": "Managed parser with no native code; runs behind the allowlist sanitizer and is treated as untrusted-input code. Fuzz target still required (G4)."
+    },
+    {
+      "name": "BouncyCastle.Cryptography",
+      "version": "2.7.0",
+      "license": "MIT",
+      "source": "https://www.nuget.org/packages/BouncyCastle.Cryptography/2.7.0",
+      "purpose": "Argon2id PIN key derivation (RFC 9106 p=4) and Ed25519 signature verification",
+      "platforms": ["any supported .NET 10 platform"],
+      "transitiveDependencies": [],
+      "review": "Pinned official Bouncy Castle package; dependency tree and package licence inspected. Used for Argon2id and Ed25519 verification in the hybrid registry-snapshot verifier; ML-DSA-65 comes from .NET 10 MLDsa. RFC vectors, performance tuning, and external crypto review remain release checks."
+    },
+    {
+      "name": "SkiaSharp.NativeAssets.Linux",
+      "version": "3.116.1",
+      "license": "MIT",
+      "source": "https://www.nuget.org/packages/SkiaSharp.NativeAssets.Linux/3.116.1",
+      "purpose": "Native Skia binaries for Linux rendering, pinned to the managed SkiaSharp version",
+      "platforms": ["linux"],
+      "transitiveDependencies": [],
+      "review": "Added as a direct pin: Avalonia.Skia requests 2.88.9 while Avalonia.Svg.Skia pulls managed SkiaSharp 3.116.1, so the Linux native assets must be raised to 3.116.1 or Skia fails at runtime. Runtime paint still needs verification on an Ubuntu host."
+    },
+    {
+      "name": "HidSharp",
+      "version": "2.6.4",
+      "license": "Apache-2.0",
+      "source": "https://www.nuget.org/packages/HidSharp/2.6.4",
+      "purpose": "Experimental USB HID dongle transport in the device emulator; not the selected product transport",
+      "platforms": ["windows", "linux"],
+      "transitiveDependencies": [],
+      "review": "Used only by the experimental KHF1 transport. The product dongle transport is Wi-Fi (docs/19 §9), so this dependency should be removed or explicitly justified before release."
+    },
+    {
+      "name": "xunit",
+      "version": "2.9.3",
+      "license": "Apache-2.0",
+      "source": "https://www.nuget.org/packages/xunit/2.9.3",
+      "purpose": "Test framework for Kickl.Core.Tests (not shipped)",
+      "platforms": ["test only"],
+      "transitiveDependencies": ["xunit.core", "xunit.assert", "xunit.analyzers"],
+      "review": "Test-only; excluded from shipped artifacts."
+    },
+    {
+      "name": "xunit.runner.visualstudio",
+      "version": "3.1.4",
+      "license": "Apache-2.0",
+      "source": "https://www.nuget.org/packages/xunit.runner.visualstudio/3.1.4",
+      "purpose": "VSTest adapter for running the xunit suite (not shipped)",
+      "platforms": ["test only"],
+      "transitiveDependencies": [],
+      "review": "Test-only; excluded from shipped artifacts."
+    },
+    {
+      "name": "Microsoft.NET.Test.Sdk",
+      "version": "17.14.1",
+      "license": "MIT",
+      "source": "https://www.nuget.org/packages/Microsoft.NET.Test.Sdk/17.14.1",
+      "purpose": "dotnet test host (not shipped)",
+      "platforms": ["test only"],
+      "transitiveDependencies": ["Microsoft.TestPlatform.TestHost", "Microsoft.CodeCoverage", "Newtonsoft.Json"],
+      "review": "Test-only; Microsoft-signed package, excluded from shipped artifacts."
+    },
+    {
+      "name": "coverlet.collector",
+      "version": "6.0.4",
+      "license": "MIT",
+      "source": "https://www.nuget.org/packages/coverlet.collector/6.0.4",
+      "purpose": "Coverage collection for the Core test suite (not shipped)",
+      "platforms": ["test only"],
+      "transitiveDependencies": [],
+      "review": "Test-only; no coverage percentage gate is enforced yet."
+    }
+  ]
+}

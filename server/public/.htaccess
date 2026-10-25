@@ -1,0 +1,8 @@
+# Apache: send every non-file request to the front controller. Works at a document root or
+# in a subdirectory such as /apicalls; the base path is detected from SCRIPT_NAME.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^ index.php [QSA,L]
+</IfModule>

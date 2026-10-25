@@ -1,0 +1,35 @@
+<kml v="1" site="sealed-lab.custom" epoch="1">
+  <head>
+    <title>Sealed inline images</title>
+    <meta name="description" content="An inline SVG with a Pinwheel-sealed image"/>
+    <meta name="headline" content="Sealed inline images"/>
+    <meta name="author" content="svg-lab"/>
+    <meta name="date" content="2026-10-24"/>
+    <meta name="location" content="Inside the SVG"/>
+    <meta name="tags" content="svg, sealed, demo"/>
+  </head>
+  <body>
+    <page>
+      <html><![CDATA[
+        <div>
+          <svg xmlns="http://www.w3.org/2000/svg" width="640" height="210" viewBox="0 0 640 210">
+            <defs>
+              <linearGradient id="sealed-bg" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#1b2b3a"/>
+                <stop offset="100%" stop-color="#0a1118"/>
+              </linearGradient>
+            </defs>
+            <rect width="640" height="210" rx="14" fill="url(#sealed-bg)"/>
+            <circle cx="86" cy="86" r="44" fill="#78c8c8" opacity="0.18"/>
+            <text x="38" y="52" fill="#78c8c8" font-family="monospace" font-size="15">SVG + HTML, NO CSS</text>
+            <text x="38" y="162" fill="#e8f1f8" font-family="monospace" font-size="26">IMAGE IS SEALED</text>
+            <text x="38" y="186" fill="#8fa8bd" font-family="monospace" font-size="13">click the unlock control below</text>
+            <rect x="378" y="30" width="226" height="120" rx="10" fill="#0b1219" stroke="#3a3320" stroke-width="1"/>
+            <text x="426" y="96" fill="#c9a227" font-family="monospace" font-size="15">SEALED</text>
+            <image href="kickl-blob:demo" x="388" y="40" width="206" height="100" preserveAspectRatio="xMidYMid slice"/>
+          </svg>
+        </div>
+      ]]></html>
+    </page>
+  </body>
+</kml>

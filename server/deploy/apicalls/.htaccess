@@ -1,0 +1,11 @@
+# Apache: send every non-file request to the front controller. Works at a document root or
+# in a subdirectory such as /apicalls; the base path is detected from SCRIPT_NAME.
+#
+# The app lives outside the web root. Uncomment and edit if the default path is not right:
+# SetEnv KICKL_APP_ROOT C:/kickl/server
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^ index.php [QSA,L]
+</IfModule>
