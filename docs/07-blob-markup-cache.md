@@ -41,6 +41,9 @@ attribute is **rejected** (not silently dropped) so authors learn the boundary.
 | `badge` | text | `tone` | small status pill |
 | `html` / `visual` | text (HTML fragment) | — | sanitized HTML with inline SVG; no CSS engine |
 | `ad` | — | `publisher`, `site`, `space`, `token` | opt-in NCKL publisher slot; native, no script |
+| `game` | — | `id`, `label`, `access` | a sealed WebAssembly game; starts only when the reader presses play (`docs/22`) |
+| `shop` | `product` | `name`, `address` | a Bitcoin shop: products with prices in satoshis and the seller's checksummed address (`docs/27`) |
+| `product` | text | `id`, `name`, `price`, `blob`, `mime`, `access` | one thing for sale; an optional `blob` is delivered as a sealed file |
 
 **Inline** elements: `b`, `i`, `u`, `s`, `code`, `a`, `span`, `br`, `badge`, `text`.
 

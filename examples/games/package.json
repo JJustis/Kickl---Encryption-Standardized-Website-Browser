@@ -1,0 +1,12 @@
+{
+  "name": "kickl-game-examples",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Tutorial games for the Kickl Browser, written in AssemblyScript.",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "assemblyscript": "0.28.2"
+  }
+}

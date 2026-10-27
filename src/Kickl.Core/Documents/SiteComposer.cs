@@ -70,9 +70,12 @@ public static class SiteComposer
         var owned = new List<byte[]>();
         try
         {
-            var ad = Nickles.ValidateSnippet(draft.Html, host, paths, master);
+            // A page can be a shop: the editor box holds a <shop> element instead of inline HTML/SVG. It is checked with the real KML
+            // parser below, so a mistyped Bitcoin address or a bad price is refused at publish time, never shown to buyers.
+            var shop = ShopFragment(draft);
+            var ad = shop is null ? Nickles.ValidateSnippet(draft.Html, host, paths, master) : null;
             string? inlineHtml = null;
-            if (!string.IsNullOrWhiteSpace(draft.Html))
+            if (shop is null && !string.IsNullOrWhiteSpace(draft.Html))
             {
                 var source = ad is null ? draft.Html : Nickles.MarkSlot(draft.Html, ad.Space);
                 var safe = InlineHtml.Sanitize(source);
@@ -104,7 +107,7 @@ public static class SiteComposer
                 hasImage = true;
             }
 
-            var kml = BuildKml(host, draft, tags, hasImage, inlineHtml, ad);
+            var kml = BuildKml(host, draft, tags, hasImage, inlineHtml, ad, shop);
             return DocumentStore.PublishMarkup(paths, host, kml, master, pending, null, seal);
         }
         finally
@@ -114,8 +117,23 @@ public static class SiteComposer
         }
     }
 
+    /// <summary>The <c>&lt;shop&gt;</c> element in the draft's editor box, if that is what the box holds.</summary>
+    public static XElement? ShopFragment(StoryDraft draft)
+    {
+        var html = draft.Html?.Trim();
+        if (string.IsNullOrEmpty(html) || !html.StartsWith("<shop", StringComparison.OrdinalIgnoreCase)) return null;
+        if (draft.IsRss) throw new KmlException("A shop is for .com and custom names, not .rss stories.");
+        XElement shop;
+        try { shop = XElement.Parse(html, LoadOptions.None); }
+        catch (System.Xml.XmlException ex) { throw new KmlException("The shop markup is not valid XML: " + ex.Message); }
+        if (shop.Name.LocalName != "shop") throw new KmlException("The shop box must hold one <shop> element.");
+        if (shop.Descendants().Any(e => e.Attribute("blob") is not null))
+            throw new KmlException("Selling a sealed file needs a site folder: publish it with `kickl publish --site`. See docs/27-shop-syntax.md.");
+        return shop;
+    }
+
     public static string BuildKml(string host, StoryDraft draft, IReadOnlyList<string> tags,
-        bool hasImage, string? inlineHtml = null, NicklesPlacement? ad = null)
+        bool hasImage, string? inlineHtml = null, NicklesPlacement? ad = null, XElement? shop = null)
     {
         var date = string.IsNullOrWhiteSpace(draft.Date)
             ? DateTimeOffset.Now.ToString("yyyy-MM-dd")
@@ -171,6 +189,10 @@ public static class SiteComposer
                         new XAttribute("space", ad.Space),
                         new XAttribute("token", ad.Token)));
             }
+        }
+        else if (shop is not null)
+        {
+            page.Add(shop);
         }
         else if (ad is not null)
         {

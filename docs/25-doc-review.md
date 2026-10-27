@@ -24,7 +24,9 @@ description of shipped behaviour.
 | `docs/04-pinwheel-network.md` | spec | Store-and-forward mailbox design; shipped direct mail is in `docs/08` §12 |
 | `docs/05-registry-identity.md` | spec / ok | |
 | `docs/06-shell-ux.md` | spec / ok | |
-| `docs/07-blob-markup-cache.md` | ok | The 64 MP page-image tiling cap is a different limit from the 16 MP stego reader cap (`docs/18`) |
+| `docs/07-blob-markup-cache.md` | updated | Element table gains `game`, `shop`, `product`. The 64 MP page-image tiling cap is a different limit from the 16 MP stego reader cap (`docs/18`) |
+| `docs/26-game-tutorial.md` | new | A step-by-step tutorial: four games from a gradient to a 3D maze, the `kickl game-check` tool, publishing, and the pitfalls hit while building them |
+| `docs/27-shop-syntax.md` | new | The `<shop>` / `<product>` syntax, address checking, publishing, the `jttp://btcshop.com` example, and what it does not do |
 | `docs/08-mail-freechat.md` | updated | §12 gains the pinned-TLS transport; new §12.1 FreeChat as shipped (https only, TOFU key pins, signed messages, bounds); checklist ticked |
 | `docs/09-nickles.md` | spec / ok | |
 | `docs/10-security-program.md` | updated | Status note pointing to the audit |
@@ -39,7 +41,7 @@ description of shipped behaviour.
 | `docs/19-hardware-device.md` | spec | Mesh is described as hardware design; the library-level mesh hardening is in `docs/21` |
 | `docs/20-encryption-map.md` | updated | Encrypted-at-rest list gains mail TLS, FreeChat prefs, sealed `.kcert` copies; bearer-credential statement and gap 12 rewritten around owner binding; new gaps 16 (FreeChat membership) and 17 (mail endpoint visibility) |
 | `docs/21-live-index-and-keys.md` | updated | Link table: mesh (transcript-bound, pinned peer), direct mail (pinned TLS 1.3), FreeChat; mesh hardening paragraph; status rows |
-| `docs/22-wasm-games.md` | ok | Limits table matches `GameLimits` and the website |
+| `docs/22-wasm-games.md` | updated | Points to the tutorial; new §5.1 on `kickl game-check`. Limits table matches `GameLimits` and the website |
 | `docs/23-certificate-authority.md` | updated | Owner binding (seal-time and shop-signed), web page passphrase, limits |
 | `docs/24-security-audit.md` | updated | Rounds 1–6, with what is fixed and what cannot be |
 | Website (`KICKLESpace/index.html`) | updated | Mail and FreeChat cards, claim steps (passphrase), new "Checked in the open" section and nav links, test count 389 |
@@ -48,6 +50,7 @@ description of shipped behaviour.
 
 - `docs/diagrams/encryption-map.svg` and `.png` were redrawn: new wire boxes for direct mail (TLS 1.3, pinned) and FreeChat, the mesh box
   (transcript-bound keys, pinned peer id), the ownership box (owner binding), and the plaintext / never-plaintext / outside-the-boundary lists.
+- The website gained a "Sell for Bitcoin" section and a Crystal Caverns and tutorial mention, and its test count reads 457.
 - The website downloads were rebuilt from the current tree: a Release, self-contained single-file Windows exe (smoke-tested: it starts and shows
   its window) and a source archive of the tracked and untracked-but-not-ignored files (no keys, no bundled PHP, no build output), with new
   SHA-256 values on the download cards. The archive contains the website page as it was when the archive was made, so the hash printed inside

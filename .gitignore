@@ -29,3 +29,6 @@ server/keys/
 server/data/
 
 server/*.log
+
+# Tutorial games: the packages are installed locally, the compiled .wasm files in build/ are committed on purpose
+examples/games/node_modules/

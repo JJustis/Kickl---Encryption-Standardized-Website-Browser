@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<kml v="1" site="caverns.custom" epoch="1">
+  <head>
+    <title>Crystal Caverns</title>
+    <meta name="description" content="A first-person 3D maze game, drawn in software by a 15 KB WebAssembly module inside the Kickl sandbox."/>
+    <meta name="headline" content="A first-person 3D game in 15 KB, running in a sandbox with no network, no files and no clock."/>
+    <meta name="author" content="Kickl"/>
+    <meta name="date" content="2026-10-27"/>
+    <meta name="tags" content="games, wasm, 3d, raycaster, demo"/>
+  </head>
+  <body>
+    <page>
+      <h1>Crystal Caverns</h1>
+      <badge>webassembly · 3d · no imports · 15 KB</badge>
+
+      <p>Find the eight crystals hidden in the cave, then walk into the exit portal that opens. Every cave is different: it
+      grows from a seed the browser picks. Your best time is saved, encrypted, in your own profile.</p>
+
+      <game id="caverns" label="Crystal Caverns"/>
+
+      <p><b>Controls.</b> Left and Right turn, Up and Down walk, A and B sidestep, Start begins. With a mouse, hold the button down
+      and the game steers towards the pointer and walks forward; hold it low on the screen to walk backwards.</p>
+
+      <h2>What you are looking at</h2>
+      <p>Nothing here is a video, an image or a library. The module is a few kilobytes of arithmetic that fills a 240 by 160 picture
+      thirty times a second, and the browser hands it nothing else: no network, no files, no clock, no randomness except the seed.</p>
+      <p>Each frame the game does all of this itself:</p>
+      <quote>casts one ray per screen column through a maze to find the wall it hits · textures that wall and shades it by torchlight
+      and by the coloured glow of nearby crystals · draws a perspective floor and ceiling · sorts and draws glowing crystals and an
+      exit portal in front of or behind the walls · throws bursts of 3D particles · and draws a map and a pixel font.</quote>
+      <p>Even the stone, moss and glowing runes are computed from noise when the game starts, which is why the whole thing fits in
+      15 KB. It uses roughly half of the instruction budget the browser allows a game on an unclaimed name.</p>
+
+      <h2>Make one yourself</h2>
+      <p>This game is written in AssemblyScript, a TypeScript-like language that compiles to WebAssembly. The tutorial in
+      docs/26-game-tutorial.md starts with a gradient and a bouncing square and builds up, step by step, to this cave, and shows
+      how to measure that your own game fits the budget before you publish it.</p>
+    </page>
+  </body>
+</kml>

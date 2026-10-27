@@ -102,8 +102,13 @@ the CA and claiming names are optional. **Full instructions, requirements and tr
   that key and refuses plain-http or unpinned endpoints. The listener caps connections and times out slow peers.
 - **FreeChat remembers member keys.** The first ML-KEM key seen for a username is pinned in your encrypted profile; a
   different key later is shown as KEY CHANGED and gets no room secret until you compare fingerprints and accept it.
+- **Selling for Bitcoin.** A page can be a **shop**: a `<shop>` of `<product>`s, each with a price in whole satoshis, paying one
+  Bitcoin address that is checked down to its checksum before the page can be published. The browser draws the cards, works out the
+  exact amount, and gives the buyer a payment link to copy into a wallet; it never sends or sees a payment. A product can carry a sealed
+  file that opens with an access key the seller sends after payment. Try `jttp://btcshop.com` (testnet). See `docs/27-shop-syntax.md`.
 - **Games** are sealed WebAssembly modules run in a capability-free sandbox (no imports, fuel-metered, memory-capped);
-  try `jttp://game-lab.custom`. See `docs/22-wasm-games.md`.
+  try `jttp://game-lab.custom`, or `jttp://caverns.custom`, a first-person 3D maze game in 15 KB. To write your own, follow the step-by-step
+  tutorial in `docs/26-game-tutorial.md` (code in `examples/games/`); `kickl game-check` measures a game against the budget. Reference: `docs/22-wasm-games.md`.
 - **Public and protected content.** Page text and public blobs are encrypted at rest but open to every reader;
   `access="protected"` blobs need the site's access key. See `docs/20`.
 
@@ -159,6 +164,8 @@ page), `artifacts/sealed-inline.png` (inline SVG with a click-to-unlock sealed i
 | 23 | [`docs/22-wasm-games.md`](docs/22-wasm-games.md) | Sealed WebAssembly games in a capability-free sandbox | engineering / security |
 | 24 | [`docs/23-certificate-authority.md`](docs/23-certificate-authority.md) | The Kickl CA, seals, transparency log, owner binding | security / backend |
 | 25 | [`docs/24-security-audit.md`](docs/24-security-audit.md) | In-house security audit: findings, fixes, and what is still open | security |
+| 28 | [`docs/26-game-tutorial.md`](docs/26-game-tutorial.md) | Tutorial: build a WebAssembly game, from a gradient to a 3D maze, and test and publish it | everyone |
+| 27 | [`docs/27-shop-syntax.md`](docs/27-shop-syntax.md) | The `<shop>` syntax: sell products for Bitcoin from a page | sellers / engineering |
 | 26 | [`docs/25-doc-review.md`](docs/25-doc-review.md) | Which documents were re-read against the code, and their status | everyone |
 | — | [`CHECKLIST.md`](CHECKLIST.md) | **Tickable master checklist** — one line per deliverable | everyone |
 | — | [`reference/api.md`](reference/api.md) | Kickl HTTP/PFS API v1 | backend |

@@ -20,7 +20,19 @@ public enum BlockKind
     Image,
     Html,
     Ad,
-    Game
+    Game,
+    Shop
+}
+
+/// <summary>One thing for sale in a <c>&lt;shop&gt;</c>. The price is whole satoshis; there is no floating point anywhere in a price.</summary>
+public sealed class ProductInfo
+{
+    public required string Id { get; init; }
+    public required string Name { get; init; }
+    public required long PriceSats { get; init; }
+    public string Description { get; init; } = "";
+    /// <summary>The id of a sealed blob delivered with the product, if any. The seller hands the reader its access key after payment.</summary>
+    public string? BlobId { get; init; }
 }
 
 public sealed class PageBlock
@@ -37,6 +49,11 @@ public sealed class PageBlock
     public int Bytes { get; set; }
     public bool Protected { get; set; }
     public int Level { get; set; }
+
+    /// <summary>A shop's Bitcoin address, checked down to its checksum when the page is parsed.</summary>
+    public string? Address { get; set; }
+    public bool Testnet { get; set; }
+    public IReadOnlyList<ProductInfo> Products { get; set; } = [];
 }
 
 public sealed class PageView
@@ -100,6 +117,15 @@ public sealed class PageView
                 case BlockKind.Game:
                     sb.AppendLine($"[ game {block.Id} · {block.Text} · WebAssembly sandbox · {block.Bytes} B ]  press play in the browser");
                     break;
+                case BlockKind.Shop:
+                    sb.AppendLine($"[ shop {block.Text} · pays to {block.Address}{(block.Testnet ? " · TESTNET, no real money" : "")} ]");
+                    foreach (var product in block.Products)
+                    {
+                        sb.AppendLine($"    {product.Name} · {BtcAmount.Sats(product.PriceSats)} sats ({BtcAmount.Btc(product.PriceSats)} BTC){(product.BlobId is null ? "" : " · sealed file " + product.BlobId)}");
+                        if (product.Description.Length > 0) sb.AppendLine("        " + product.Description);
+                    }
+                    sb.AppendLine("    Kickl cannot see payments; the seller confirms them and hands over any access key.");
+                    break;
                 case BlockKind.Blob when unlocked.Contains(block.Id!):
                     sb.AppendLine($"[ {block.Id} · UNLOCKED · {block.Mime} ]");
                     if (texts.TryGetValue(block.Id!, out var text))
@@ -126,7 +152,7 @@ public static class Kml
 {
     private static readonly HashSet<string> AllowedElements = new(StringComparer.Ordinal)
     {
-        "kml", "head", "title", "meta", "styles", "body", "page", "stack", "row", "grid", "card", "game",
+        "kml", "head", "title", "meta", "styles", "body", "page", "stack", "row", "grid", "card", "game", "shop", "product",
         "h1", "h2", "h3", "h4", "p", "text", "a", "code", "quote", "hr", "img", "blob", "file",
         "button", "badge", "b", "i", "u", "s", "span", "br", "html", "visual", "ad"
     };
@@ -142,7 +168,7 @@ public static class Kml
     {
         "v", "site", "epoch", "name", "content", "id", "ref", "mime", "w", "h", "label", "size",
         "href", "tone", "align", "class", "width", "cols", "gap", "pad", "src", "alt", "intent",
-        "lang", "mono", "title", "publisher", "space", "token", "access"
+        "lang", "mono", "title", "publisher", "space", "token", "access", "address", "price", "blob"
     };
 
     public static PageView Parse(string xml, string host)
@@ -315,6 +341,9 @@ public static class Kml
                         Protected = IsProtected(child)
                     });
                     break;
+                case "shop":
+                    AddShop(child, blocks);
+                    break;
                 case "button":
                     blocks.Add(new PageBlock { Kind = BlockKind.Button, Text = TextOf(child) });
                     break;
@@ -363,6 +392,74 @@ public static class Kml
                 default:
                     throw new KmlException($"Unexpected element <{child.Name.LocalName}>.");
             }
+        }
+    }
+
+    public const int MaxProducts = 24;
+
+    /// <summary>
+    /// <c>&lt;shop name="…" address="…"&gt;</c> holding <c>&lt;product id="…" name="…" price="sats" [blob="id" access="protected"]&gt;description&lt;/product&gt;</c>.
+    /// The address must be a complete, checksummed Bitcoin address; prices are whole satoshis. A product's <c>blob</c> is delivered as a
+    /// sealed blob on the same page, so a protected one opens with the access key the seller sends after payment.
+    /// </summary>
+    private static void AddShop(XElement shop, List<PageBlock> blocks)
+    {
+        var address = ((string?)shop.Attribute("address"))?.Trim()
+                      ?? throw new KmlException("<shop> needs the seller's Bitcoin address.");
+        var info = BitcoinAddress.Parse(address)
+                   ?? throw new KmlException("<shop> address is not a valid Bitcoin address (the checksum does not match). Check it character by character.");
+        var name = (string?)shop.Attribute("name") ?? "Shop";
+        if (name.Length > 80) throw new KmlException("<shop> name is longer than 80 characters.");
+
+        var products = new List<ProductInfo>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var child in shop.Elements())
+        {
+            if (child.Name.LocalName != "product")
+                throw new KmlException($"A <shop> can only hold <product> elements, not <{child.Name.LocalName}>.");
+            if (products.Count >= MaxProducts) throw new KmlException($"A shop can list at most {MaxProducts} products.");
+
+            var id = (string?)child.Attribute("id") ?? throw new KmlException("<product> needs an id.");
+            if (id.Length is < 1 or > 32 || !id.All(c => c is >= 'a' and <= 'z' or >= '0' and <= '9' or '-'))
+                throw new KmlException($"Product id \"{id}\" must be 1-32 lowercase letters, digits or hyphens.");
+            if (!seen.Add(id)) throw new KmlException($"Product id \"{id}\" is used twice.");
+
+            var productName = (string?)child.Attribute("name") ?? throw new KmlException($"Product {id} needs a name.");
+            if (productName.Length is < 1 or > 80) throw new KmlException($"Product {id}: the name must be 1-80 characters.");
+
+            var rawPrice = (string?)child.Attribute("price") ?? throw new KmlException($"Product {id} needs a price in satoshis.");
+            if (!long.TryParse(rawPrice, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var price)
+                || price < 1 || price > BtcAmount.MaxSats)
+                throw new KmlException($"Product {id}: the price must be a whole number of satoshis between 1 and {BtcAmount.MaxSats:N0}.");
+
+            var description = TextOf(child);
+            if (description.Length > 500) throw new KmlException($"Product {id}: the description is longer than 500 characters.");
+
+            var blob = (string?)child.Attribute("blob");
+            if (blob is not null && (blob.Length is < 1 or > 64)) throw new KmlException($"Product {id}: the blob id is not valid.");
+            products.Add(new ProductInfo { Id = id, Name = productName, PriceSats = price, Description = description, BlobId = blob });
+        }
+        if (products.Count == 0) throw new KmlException("A <shop> needs at least one <product>.");
+
+        blocks.Add(new PageBlock
+        {
+            Kind = BlockKind.Shop,
+            Text = name,
+            Address = address,
+            Testnet = info.Network == BitcoinNetwork.Testnet,
+            Products = products
+        });
+
+        // Each product's file is an ordinary sealed blob on the page; the product's access setting decides whether it needs a key
+        foreach (var product in shop.Elements().Where(p => p.Attribute("blob") is not null))
+        {
+            blocks.Add(new PageBlock
+            {
+                Kind = BlockKind.Blob,
+                Id = (string)product.Attribute("blob")!,
+                Mime = (string?)product.Attribute("mime") ?? "application/octet-stream",
+                Protected = IsProtected(product)
+            });
         }
     }
 

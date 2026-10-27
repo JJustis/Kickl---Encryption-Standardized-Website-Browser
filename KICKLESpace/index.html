@@ -47,6 +47,7 @@
       <a href="#claim">Claim a site</a>
       <a href="#ca">CA</a>
       <a href="#games">Games</a>
+      <a href="#shop">Shop</a>
       <a href="#audit">Audit</a>
       <a href="#server">Server</a>
       <a href="#download">Download</a>
@@ -69,7 +70,7 @@
   <section class="hero" id="top">
     <div class="hero__copy">
       <p class="eyebrow reveal">
-        <span class="pulse"></span> v0.2 · vertical slice · 389 tests green
+        <span class="pulse"></span> v0.2 · vertical slice · 457 tests green
       </p>
       <h1 class="hero__title reveal">
         Browse a web that<br>
@@ -226,7 +227,7 @@
     <div class="shell stats__grid">
       <div class="stat reveal"><strong data-count="0">0</strong><span>JavaScript on any page</span></div>
       <div class="stat reveal"><strong data-count="256">0</strong><span>bits of AES-GCM, everywhere</span></div>
-      <div class="stat reveal"><strong data-count="389">0</strong><span>tests green in the suite</span></div>
+      <div class="stat reveal"><strong data-count="457">0</strong><span>tests green in the suite</span></div>
       <div class="stat reveal"><strong data-count="1">0</strong><span>.exe to run, no install</span></div>
     </div>
   </section>
@@ -671,10 +672,86 @@
       </table>
 
       <p class="games__note reveal">
-        Try it: open <code>jttp://game-lab.custom</code> in the browser and press <b>PLAY</b>. A game can
-        still draw anything on its picture, so treat its pixels like a page's, not like browser controls.
-        Build your own with the
-        <a href="https://github.com/JJustis/Kickl---Encryption-Standardized-Website-Browser/blob/main/docs/22-wasm-games.md" target="_blank" rel="noopener">author guide ↗</a>.
+        Try it: open <code>jttp://game-lab.custom</code> in the browser and press <b>PLAY</b>. For what a sandboxed game can
+        really do, open <code>jttp://caverns.custom</code> (run the browser from the source with <code>--demo</code>): <b>Crystal Caverns</b>, a first-person 3D maze with textured walls,
+        torchlight, glowing crystals and a swirling exit, drawn in software by a 15&nbsp;KB module. A game can still draw anything
+        on its picture, so treat its pixels like a page&rsquo;s, not like browser controls. Build your own with the
+        <a href="https://github.com/JJustis/Kickl---Encryption-Standardized-Website-Browser/blob/main/docs/26-game-tutorial.md" target="_blank" rel="noopener">step-by-step tutorial ↗</a>
+        or the <a href="https://github.com/JJustis/Kickl---Encryption-Standardized-Website-Browser/blob/main/docs/22-wasm-games.md" target="_blank" rel="noopener">reference ↗</a>.
+      </p>
+    </div>
+  </section>
+
+  <section class="shell section under games" id="shop">
+    <div class="under__copy">
+      <p class="eyebrow reveal">Sell something</p>
+      <h2 class="reveal">A shop in a dozen lines.</h2>
+      <p class="section__lede reveal">
+        A page can be a <strong>shop</strong>: a list of products, a price in satoshis for each, and the one Bitcoin
+        address that gets paid. The browser draws the cards, works out the exact amount in bitcoin, and hands the buyer a
+        payment link for their wallet. It never sends a payment and cannot see one, so you confirm payments yourself.
+      </p>
+
+      <ol class="steps">
+        <li class="reveal">
+          <span class="steps__num">01</span>
+          <div>
+            <h3>The address is checked</h3>
+            <p>Checksum included, for legacy, Segwit and Taproot, mainnet and testnet. A mistyped address is refused when you publish, so no money is sent to nobody.</p>
+          </div>
+        </li>
+        <li class="reveal">
+          <span class="steps__num">02</span>
+          <div>
+            <h3>Prices are whole satoshis</h3>
+            <p>No decimals and no rounding. Each card shows both forms, such as 50,000 sats and 0.00050000 BTC.</p>
+          </div>
+        </li>
+        <li class="reveal">
+          <span class="steps__num">03</span>
+          <div>
+            <h3>Sell a sealed file</h3>
+            <p>A product can carry a file sealed inside the page. It opens only with the access key you send the buyer after they pay.</p>
+          </div>
+        </li>
+        <li class="reveal">
+          <span class="steps__num">04</span>
+          <div>
+            <h3>The buyer sees who is selling</h3>
+            <p>A name sealed by the Kickl CA shows <b>VERIFIED OWNER</b>; anything else says the seller is unverified. Testnet addresses are badged as no real money.</p>
+          </div>
+        </li>
+      </ol>
+    </div>
+
+    <div class="games__side">
+      <div class="code-panel reveal" aria-label="A page that is a Bitcoin shop">
+        <div class="code-panel__head">
+          <span class="dots"><i></i><i></i><i></i></span>
+          <span>btcshop.com/site.kml</span>
+          <span class="code-panel__badge">SHOP</span>
+        </div>
+        <pre><code><span class="c-tag">&lt;shop</span> <span class="c-attr">name</span>=<span class="c-str">"My shop"</span>
+      <span class="c-attr">address</span>=<span class="c-str">"bc1q…your address…"</span><span class="c-tag">&gt;</span>
+  <span class="c-tag">&lt;product</span> <span class="c-attr">id</span>=<span class="c-str">"sticker"</span> <span class="c-attr">name</span>=<span class="c-str">"Sticker pack"</span>
+           <span class="c-attr">price</span>=<span class="c-str">"1500"</span><span class="c-tag">&gt;</span>
+    Three vinyl stickers.
+  <span class="c-tag">&lt;/product&gt;</span>
+  <span class="c-tag">&lt;product</span> <span class="c-attr">id</span>=<span class="c-str">"guide"</span> <span class="c-attr">name</span>=<span class="c-str">"Field guide"</span>
+           <span class="c-attr">price</span>=<span class="c-str">"50000"</span> <span class="c-attr">blob</span>=<span class="c-str">"guide"</span>
+           <span class="c-attr">access</span>=<span class="c-str">"protected"</span><span class="c-tag">&gt;</span>
+    A sealed PDF.
+  <span class="c-tag">&lt;/product&gt;</span>
+<span class="c-tag">&lt;/shop&gt;</span></code></pre>
+        <div class="code-panel__foot">
+          <span><i class="dot dot--green"></i> checksummed address</span>
+          <span><i class="dot dot--violet"></i> prices in sats</span>
+        </div>
+      </div>
+      <p class="games__note reveal">
+        Try it: run the browser from the source with <code>--demo</code>, open <code>jttp://btcshop.com</code> (it pays a testnet address, so it is safe) and press <b>BUY</b>.
+        Create your own in the site editor with <b>SHOP · SELL FOR BITCOIN</b>. Read the
+        <a href="https://github.com/JJustis/Kickl---Encryption-Standardized-Website-Browser/blob/main/docs/27-shop-syntax.md" target="_blank" rel="noopener">shop syntax guide ↗</a>.
       </p>
     </div>
   </section>
@@ -724,7 +801,7 @@
       <table class="limits reveal" aria-label="Audit at a glance">
         <thead><tr><th></th><th>Status</th></tr></thead>
         <tbody>
-          <tr><th>Tests in the suite</th><td>389</td></tr>
+          <tr><th>Tests in the suite</th><td>457</td></tr>
           <tr><th>Known vulnerable packages</th><td>none</td></tr>
           <tr><th>Independent pentest</th><td>not yet</td></tr>
           <tr><th>Open items listed</th><td>yes, in the audit</td></tr>
@@ -750,7 +827,7 @@
         </p>
         <p class="section__lede">
           <strong>Rebuilt 2026-10-27</strong> from the current source: site claims and owner passphrases, the CA badge,
-          WebAssembly games, pinned-TLS mail and signed FreeChat are all in this .exe. Check the SHA-256 against the
+          WebAssembly games, the Bitcoin shop syntax, pinned-TLS mail and signed FreeChat are all in this .exe. Check the SHA-256 against the
           value below, or
           <a href="https://github.com/JJustis/Kickl---Encryption-Standardized-Website-Browser/blob/main/INSTALL.md" target="_blank" rel="noopener">build it yourself from source</a>.
         </p>
@@ -772,7 +849,7 @@
           </a>
           <div class="hash">
             <span class="hash__label">SHA-256</span>
-            <code id="hash-exe">23499416ea69afb7fd478d8d8dd48504b2c9d50267126b03b05f2f7242515e8c</code>
+            <code id="hash-exe">4db3ef26b870f4abeb1c4e24835c2b96cd68ed37d08b04f42143124dac82dd1d</code>
             <button class="hash__copy" type="button" data-copy="#hash-exe" aria-label="Copy the browser SHA-256">
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15 6.5V5.6A1.6 1.6 0 0 0 13.4 4H5.6A1.6 1.6 0 0 0 4 5.6v7.8A1.6 1.6 0 0 0 5.6 15h.9" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
             </button>
@@ -788,13 +865,13 @@
             <span class="pill pill--ghost">read it all</span>
           </div>
           <h3>kickl-browser<span class="dl-card__ext">-source.zip</span></h3>
-          <p class="dl-card__meta">2.1 MB · C# / .NET 10 / Avalonia · 226 files</p>
+          <p class="dl-card__meta">2.2 MB · C# / .NET 10 / Avalonia · 253 files</p>
           <a class="btn btn--outline btn--block" href="download/kickl-browser-source.zip" download>
             Download the source
           </a>
           <div class="hash">
             <span class="hash__label">SHA-256</span>
-            <code id="hash-src">63a42ee776a2c71b951c1e720d81040a6cf3193a829d2a17aac5d70dc5e224a6</code>
+            <code id="hash-src">31bbd225c3c8b3cc70130fb769b3b41d4777d440bfa9ba5b849578591a870af3</code>
             <button class="hash__copy" type="button" data-copy="#hash-src" aria-label="Copy the source SHA-256">
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15 6.5V5.6A1.6 1.6 0 0 0 13.4 4H5.6A1.6 1.6 0 0 0 4 5.6v7.8A1.6 1.6 0 0 0 5.6 15h.9" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
             </button>
@@ -848,6 +925,7 @@
       <a href="#claim">Claim a site</a>
       <a href="#ca">CA</a>
       <a href="#games">Games</a>
+      <a href="#shop">Shop</a>
       <a href="#audit">Audit</a>
       <a href="#download">Download</a>
       <a href="https://secupgrade.com" target="_blank" rel="noopener">secupgrade.com ↗</a>

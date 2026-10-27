@@ -612,8 +612,8 @@ public sealed class BrowserSession : IDisposable
     /// bigger games. Neither limit can be removed by the game.
     /// </summary>
     public GameLimits GameLimitsFor(string host) => SiteClaims.ActiveTitle(_paths, host) is null
-        ? new GameLimits(MaxModuleBytes: 512 * 1024, MaxMemoryBytes: 8L << 20, InitFuel: 100_000_000, FrameFuel: 10_000_000)
-        : new GameLimits(MaxModuleBytes: 2 * 1024 * 1024, MaxMemoryBytes: 32L << 20, InitFuel: 400_000_000, FrameFuel: 40_000_000);
+        ? GameLimits.Unclaimed
+        : GameLimits.Claimed;
 
     /// <summary>
     /// Open the sealed wasm blob <paramref name="blobId"/> of the current page as a game, restore this reader's

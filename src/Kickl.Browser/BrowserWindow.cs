@@ -45,7 +45,7 @@ public sealed partial class BrowserWindow : Window
     private const string AdPublisherUrl = "jttp://secupgrade.com/adnetworking/publisher";
     private const string SecupgradeRssFile = @"C:\xampp\htdocs\rssfeed.xml";
     private static readonly string[] DemoHosts =
-        [HomeHost, "mesh-lab.custom", "stego-lab.custom", "nickles-testnet.custom", "svg-lab.custom", "sealed-lab.custom", "game-lab.custom"];
+        [HomeHost, "mesh-lab.custom", "stego-lab.custom", "nickles-testnet.custom", "svg-lab.custom", "sealed-lab.custom", "game-lab.custom", "caverns.custom", "btcshop.com"];
     private const string Accent = "#58a6ff";
     private const string Green = "#7ee787";
     private const string Amber = "#f2cc60";
@@ -3199,6 +3199,9 @@ public sealed partial class BrowserWindow : Window
             case BlockKind.Game:
                 stack.Children.Add(BuildGame(tab, block));
                 break;
+            case BlockKind.Shop:
+                stack.Children.Add(BuildShop(tab, block));
+                break;
         }
     }
 
@@ -3694,8 +3697,10 @@ public sealed partial class BrowserWindow : Window
             var pagePreview = new ContentControl();
             void RenderPreview()
             {
-                pagePreview.Content = _sealedSurface.RenderInlineFragment(draft.Html ?? "", C(Text), C(Muted), C(Accent),
-                    Sans, Mono, 12);
+                // A <shop> in the box is a Bitcoin shop, not inline HTML: preview it with the real parser
+                pagePreview.Content = (draft.Html ?? "").TrimStart().StartsWith("<shop", StringComparison.OrdinalIgnoreCase)
+                    ? ShopPreview(draft.Html!, draft.Host)
+                    : _sealedSurface.RenderInlineFragment(draft.Html ?? "", C(Text), C(Muted), C(Accent), Sans, Mono, 12);
             }
 
             visual.TextChanged += (_, _) =>
@@ -3705,7 +3710,12 @@ public sealed partial class BrowserWindow : Window
             };
             RenderPreview();
 
-            stack.Children.Add(Field("PAGE · INLINE HTML / SVG · no CSS, no scripts, no external requests", visual));
+            var syntax = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 };
+            syntax.Children.Add(T("START FROM", 9.5, Muted, mono: true));
+            syntax.Children.Add(Btn("PAGE EXAMPLE", () => visual.Text = SiteStarter.Example(draft.Host)));
+            syntax.Children.Add(Btn("SHOP · SELL FOR BITCOIN", () => visual.Text = SiteStarter.ShopExample(draft.Host), accent: true));
+            stack.Children.Add(syntax);
+            stack.Children.Add(Field("PAGE · INLINE HTML / SVG, or a <shop> to sell for Bitcoin · no CSS, no scripts, no external requests", visual));
             stack.Children.Add(Field("PREVIEW · change the code and this updates", new Border
             {
                 Background = C("#0b1219"),
@@ -3715,7 +3725,7 @@ public sealed partial class BrowserWindow : Window
                 Padding = new Thickness(14),
                 Child = pagePreview
             }));
-            stack.Children.Add(T("A working example is already here: change the drawing and text to learn the format. Pasted data-URL images are extracted and sealed; a sealed image shows an unlock button until clicked. Scripts, forms, event handlers, stylesheets, and remote URLs are removed before rendering.", 9, Muted).WithWrap());
+            stack.Children.Add(T("A <shop> lists products with a price in satoshis and the Bitcoin address that gets paid; the address checksum is checked before you can publish. A working example is already here: change the drawing and text to learn the format. Pasted data-URL images are extracted and sealed; a sealed image shows an unlock button until clicked. Scripts, forms, event handlers, stylesheets, and remote URLs are removed before rendering.", 9, Muted).WithWrap());
 
             var tags = Input(string.Join(", ", draft.Tags), "tags · comma separated, at least one");
             tags.TextChanged += (_, _) => draft.Tags = SplitTags(tags.Text);
@@ -5381,7 +5391,8 @@ public sealed partial class BrowserWindow : Window
             {
                 var site = Path.Combine(root, "sites", host);
                 if (!File.Exists(Path.Combine(site, "site.kml"))) continue;
-                DocumentStore.Publish(paths, site, host, master);
+                // The example shop tells visitors its access key out loud so they can try the unlock box
+                DocumentStore.Publish(paths, site, host, master, null, host == "btcshop.com" ? "demo-paid" : null);
             }
         }
         finally

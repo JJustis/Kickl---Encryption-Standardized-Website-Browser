@@ -1,5 +1,8 @@
 # 22 — WebAssembly games
 
+> **New to this? Start with the walk-through:** [`docs/26-game-tutorial.md`](26-game-tutorial.md) builds four games from a gradient to a 3D maze, and
+> `kickl game-check` (below) measures a game against the limits before you publish it. This document is the reference.
+
 > Scope: the slice as implemented (`Kickl.Core/Games`, `BrowserWindow.Games.cs`). A page can carry a game
 > as a sealed WebAssembly module and the reader can play it without trusting it.
 
@@ -73,6 +76,16 @@ Then publish the site and open `jttp://game-lab.custom/`. In a higher-level lang
 `wasm32-unknown-unknown` target with no WASI and no imports, export the functions above, and keep the
 framebuffer and save area in static memory. If the browser says "the game asks the host for env.something",
 your toolchain emitted an import; turn off the standard library features that need one.
+
+## 5.1 Checking a game before you publish it
+
+```
+kickl game-check game.wasm [--script "none*10,start*3,up*40"] [--seed N] [--claimed] [--png out.png]
+```
+
+It loads the module with the limits of an unclaimed (or `--claimed`) name, runs it without a window for the frames you scripted, and reports the module size,
+the cost of `init`, the average and worst per-frame instruction counts as a share of the budget, whether the game's memory grew while it ran (a game that
+allocates every frame will eventually halt), and the final picture as a PNG. The exit code is 2 if the browser would refuse the game and 3 if it halted.
 
 ## 6. What this does not protect
 

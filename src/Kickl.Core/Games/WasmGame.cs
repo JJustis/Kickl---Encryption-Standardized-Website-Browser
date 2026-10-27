@@ -9,7 +9,14 @@ public sealed record GameLimits(
     ulong InitFuel = 200_000_000,          // instructions allowed for init()
     ulong FrameFuel = 20_000_000,          // instructions allowed per frame()
     int MaxSaveBytes = 4096,               // per-site save data the reader's profile will keep
-    int MaxStackBytes = 512 * 1024);
+    int MaxStackBytes = 512 * 1024)
+{
+    /// <summary>What a game gets on a name nobody has paid for.</summary>
+    public static GameLimits Unclaimed { get; } = new(MaxModuleBytes: 512 * 1024, MaxMemoryBytes: 8L << 20, InitFuel: 100_000_000, FrameFuel: 10_000_000);
+
+    /// <summary>What a game gets on a claimed name.</summary>
+    public static GameLimits Claimed { get; } = new(MaxModuleBytes: 2 * 1024 * 1024, MaxMemoryBytes: 32L << 20, InitFuel: 400_000_000, FrameFuel: 40_000_000);
+}
 
 /// <summary>Bit flags for <see cref="GameInput.Buttons"/>.</summary>
 public static class GameButtons
@@ -60,6 +67,13 @@ public sealed class WasmGame : IDisposable
 
     public bool Halted { get; private set; }
     public string? HaltReason { get; private set; }
+
+    /// <summary>The size of the game's linear memory now. If this keeps growing while the game runs, the game is allocating every frame.</summary>
+    public long MemoryBytes => _memory.GetLength();
+
+    /// <summary>Instructions the last <c>init</c> / <c>frame</c> call used, so an author can see how close a game runs to its budget.</summary>
+    public ulong LastInitFuel { get; private set; }
+    public ulong LastFrameFuel { get; private set; }
 
     private WasmGame(Engine engine, Store store, Module module, Instance instance, GameLimits limits)
     {
@@ -166,6 +180,7 @@ public sealed class WasmGame : IDisposable
         {
             _store.Fuel = _limits.InitFuel;
             _init(seed);
+            LastInitFuel = _limits.InitFuel - _store.Fuel;
             CheckFrameBuffer();
         });
     }
@@ -185,6 +200,7 @@ public sealed class WasmGame : IDisposable
         {
             _store.Fuel = _limits.FrameFuel;
             _frame(Math.Clamp(dtMs, 0, 1000), buttons, x, y, input.PointerDown ? 1 : 0);
+            LastFrameFuel = _limits.FrameFuel - _store.Fuel;
         });
         return !Halted;
     }

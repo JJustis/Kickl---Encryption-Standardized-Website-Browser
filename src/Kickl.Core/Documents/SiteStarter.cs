@@ -8,6 +8,21 @@ namespace Kickl.Core.Documents;
 /// </summary>
 public static class SiteStarter
 {
+    /// <summary>
+    /// A starter <c>&lt;shop&gt;</c> for someone who wants to sell something for Bitcoin. The address is a TESTNET address, so nothing sent to it
+    /// is real money: replace it with your own (a mistyped address is refused when you publish).
+    /// </summary>
+    public static string ShopExample(string host)
+    {
+        _ = host;
+        return """
+            <shop name="My shop" address="tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx">
+              <product id="sticker" name="Sticker pack" price="1500">Three vinyl stickers, shipped anywhere. Prices are in satoshis (1 BTC = 100,000,000).</product>
+              <product id="print" name="Poster print" price="25000">A3 print on thick matte paper.</product>
+            </shop>
+            """;
+    }
+
     public static string Example(string host)
     {
         var safe = WebUtility.HtmlEncode(host.Trim());

@@ -1,0 +1,11 @@
+PATHFORGE PRO — demo delivery
+=============================
+
+This text is the "file" behind the PathForge Pro product on the example BTC Shop page. It was sealed
+inside the page when the page was published, and it only opened because you gave the page's access key.
+
+In a real shop this would be the thing the buyer paid for: a ZIP, a PDF, a licence key, a download
+link. The seller publishes it as a protected blob, then sends each buyer the access key once their
+payment has arrived.
+
+Nothing here is real. The shop pays a Bitcoin testnet address.

@@ -60,6 +60,7 @@ internal static class Program
             "status" => Status(rest),
             "registry" => Registry(rest),
             "demo" => Demo(rest),
+            "game-check" => GameCheckCommand(rest),
             "shell" => Shell(rest),
             "help" or "--help" or "-h" => Help(),
             _ => Unknown(command)
@@ -1086,12 +1087,72 @@ Kickl Browser � slice CLI
   kickl registry  sync --url URL --key FILE [--data DIR]
   kickl registry  status [--data DIR]
   kickl demo      [--dir DIR]
+  kickl game-check <game.wasm> [--script STEPS] [--seed N] [--claimed] [--png FILE] [--scale N]
   kickl shell     [--data DIR]
 
 The data directory holds one local profile in the slice, under profiles/local.
 jttp:// names resolve through the local registry mirror; they never touch HTTP.
 """);
         return 0;
+    }
+
+    /// <summary>
+    /// Run a WebAssembly game without a window: does it load, how much of its per-frame instruction budget does it use, and what does
+    /// it draw? Prints a report and can save the last frame as a PNG. See docs/26-game-tutorial.md.
+    /// </summary>
+    private static int GameCheckCommand(string[] args)
+    {
+        var opts = Options.Parse(args);
+        if (opts.Positional.Count == 0)
+        {
+            Error("usage: kickl game-check <game.wasm> [--script \"none*10,up*30,a*5\"] [--seed N] [--claimed] [--png FILE] [--scale N]");
+            return 1;
+        }
+
+        var wasm = File.ReadAllBytes(opts.Positional[0]);
+        var limits = opts.Has("claimed") ? Kickl.Core.Games.GameLimits.Claimed : Kickl.Core.Games.GameLimits.Unclaimed;
+        var script = Kickl.Core.Games.GameCheck.ParseScript(opts.Get("script") ?? "none*60");
+        var seed = int.TryParse(opts.Get("seed"), out var s) ? s : 1;
+
+        Kickl.Core.Games.GameCheckReport report;
+        try
+        {
+            report = Kickl.Core.Games.GameCheck.Run(wasm, limits, seed, script);
+        }
+        catch (Kickl.Core.Games.GameRejectedException ex)
+        {
+            Error("the browser would refuse this game: " + ex.Message);
+            return 2;
+        }
+
+        string Pct(ulong used, ulong budget) => (100.0 * used / budget).ToString("0.0") + "% of the budget";
+        Console.WriteLine($"module      {report.ModuleBytes:N0} bytes (limit {limits.MaxModuleBytes:N0}, {(opts.Has("claimed") ? "claimed" : "unclaimed")} name)");
+        Console.WriteLine($"init        {report.InitFuel:N0} instructions, {Pct(report.InitFuel, report.InitBudget)}");
+        Console.WriteLine($"frames run  {report.FramesRun}");
+        Console.WriteLine($"per frame   average {report.AverageFrameFuel:N0}, worst {report.MaxFrameFuel:N0} instructions, worst is {Pct(report.MaxFrameFuel, report.FrameBudget)}");
+        Console.WriteLine($"memory      {report.MemoryAtEnd:N0} bytes, grew by {report.MemoryGrowth:N0} while running" +
+                          (report.MemoryGrowth > 0 ? "  <- the game allocates while it runs; build strings and arrays in init(), not frame()" : ""));
+        Console.WriteLine($"save area   {report.Save.Length} byte(s)");
+        Console.WriteLine(report.Halted ? $"HALTED      {report.HaltReason}" : "status      still running");
+
+        if (opts.Get("png") is { Length: > 0 } png)
+        {
+            var scale = int.TryParse(opts.Get("scale"), out var sc) ? Math.Clamp(sc, 1, 8) : 3;
+            const int w = Kickl.Core.Games.WasmGame.Width, h = Kickl.Core.Games.WasmGame.Height;
+            var rgb = new byte[w * scale * h * scale * 3];
+            for (var y = 0; y < h * scale; y++)
+                for (var x = 0; x < w * scale; x++)
+                {
+                    var src = ((y / scale) * w + x / scale) * 4;
+                    var dst = (y * w * scale + x) * 3;
+                    rgb[dst] = report.LastFrameRgba[src];
+                    rgb[dst + 1] = report.LastFrameRgba[src + 1];
+                    rgb[dst + 2] = report.LastFrameRgba[src + 2];
+                }
+            File.WriteAllBytes(png, Kickl.Core.Stego.PngCarrier.Write(w * scale, h * scale, rgb));
+            Console.WriteLine($"picture     {png} ({w * scale}x{h * scale})");
+        }
+        return report.Halted ? 3 : 0;
     }
 
     private static int Unknown(string command)

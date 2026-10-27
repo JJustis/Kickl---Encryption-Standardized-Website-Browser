@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<kml v="1" site="btcshop.com" epoch="1">
+  <head>
+    <title>BTC Shop</title>
+    <meta name="description" content="An example Bitcoin shop written in Kickl's shop syntax: products, prices in satoshis, one address."/>
+    <meta name="headline" content="A shop you can write in a dozen lines: products, prices in satoshis, one Bitcoin address."/>
+    <meta name="author" content="Kickl"/>
+    <meta name="date" content="2026-10-27"/>
+    <meta name="tags" content="shop, bitcoin, example, store"/>
+  </head>
+  <body>
+    <page>
+      <h1>BTC Shop</h1>
+      <badge>example · bitcoin shop syntax · testnet, no real money</badge>
+
+      <p>This page is a shop, and the whole shop is the short block of markup further down. It lists products, a price in
+      satoshis for each, and the one Bitcoin address that gets paid. The browser draws the cards, works out the exact amount in
+      bitcoin, and gives the buyer a payment link their wallet understands. It is modelled on the BTC shop at
+      secupgrade.com/btcshop, with the same kinds of goods at the same prices.</p>
+
+      <shop name="BTC Shop" address="tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx">
+        <product id="pathforge-pro" name="PathForge Pro" price="2418" blob="pathforge-pro" mime="text/plain" access="protected">A* pathfinding library (C++): the standard edition plus entity and object avoidance, with NPCs as obstacles. Delivered as a sealed file.</product>
+        <product id="surviving-day" name="Surviving Day" price="12090">The Surviving Day game, current version.</product>
+        <product id="ad-upload" name="Ad upload and hosting (one ad)" price="3000">Pay once to upload one ad to the ad network. Each paid order is used up by one submission.</product>
+        <product id="site-claim" name="Claim a jttp:// site" price="10000">Pay once to own a jttp:// name for 12 months. Only the Kickl ID you give can then publish to it.</product>
+      </shop>
+
+      <h2>How buying works</h2>
+      <p>Press BUY on a product. The card shows the exact amount and the seller's address. Copy the payment link into a wallet,
+      or copy the address and amount by hand. Kickl never sends a payment and cannot see one: when you have paid, the seller
+      confirms it and sends you what you bought.</p>
+      <p>A product with a file, like PathForge Pro above, ships it sealed inside the page. It stays locked until the seller sends
+      you the access key. In this demo the key is <code>demo-paid</code>, so you can try the unlock box right under the shop.</p>
+      <p>This demo pays a Bitcoin testnet address. Coins sent there are worth nothing and nobody receives them. A real shop
+      swaps in its own mainnet address, and a mistyped address is refused when the page is published.</p>
+
+      <h2>Sell something yourself</h2>
+      <p>Create a name, open its editor, and choose SHOP · SELL FOR BITCOIN. You get a working shop to change:</p>
+      <code>&lt;shop name="My shop" address="bc1q…your address…"&gt;
+  &lt;product id="sticker" name="Sticker pack" price="1500"&gt;
+    Three vinyl stickers, shipped anywhere.
+  &lt;/product&gt;
+  &lt;product id="guide" name="Field guide" price="50000"
+           blob="guide" access="protected"&gt;
+    A PDF, sealed in this page. You send the buyer its access key.
+  &lt;/product&gt;
+&lt;/shop&gt;</code>
+      <quote>A price is a whole number of satoshis, so there is never a rounding error: 1 BTC is 100,000,000 sats.</quote>
+    </page>
+  </body>
+</kml>

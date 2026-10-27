@@ -85,6 +85,8 @@ Sign in with the fixed key **`1234`**. Use the demo for experiments only, never 
 | `jttp://svg-lab.custom` | inline SVG |
 | `jttp://sealed-lab.custom` | click-to-unlock sealed images |
 | `jttp://game-lab.custom` | a playable WebAssembly game |
+| `jttp://caverns.custom` | Crystal Caverns, a first-person 3D game (the showpiece of what a sandboxed game can do) |
+| `jttp://btcshop.com` | an example Bitcoin shop (testnet); the demo access key for its sealed file is `demo-paid` |
 
 **Where your data goes.** `--data DIR` picks the folder; the default is `%LOCALAPPDATA%\KicklBrowser`
 (`~/.local/share/KicklBrowser` on Linux). `run.bat` uses `.kickl-mail-ui` in the repo, which Git ignores. To remove
