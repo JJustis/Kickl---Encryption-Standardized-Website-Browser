@@ -59,6 +59,7 @@ public static class DeviceRelayKey
         var temp = paths.RelayKey + ".tmp";
         File.WriteAllText(temp, JsonSerializer.Serialize(file, Json));
         File.Move(temp, paths.RelayKey, overwrite: true);
+        FileProtection.Restrict(paths.RelayKey);
         return new RelayIdentity(rsa, deviceId, spki);
     }
 

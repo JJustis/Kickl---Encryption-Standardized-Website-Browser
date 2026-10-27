@@ -1,4 +1,5 @@
 using System.Text;
+using Kickl.Core.Util;
 
 namespace Kickl.Browser;
 
@@ -6,17 +7,21 @@ internal static class CrashLog
 {
     public static string PathFor(string dataRoot) => Path.Combine(dataRoot, "crash.log");
 
+    /// <summary>
+    /// A crash is logged in plaintext (nothing can be encrypted yet), so only what helps fix the bug is kept: the error type,
+    /// a scrubbed message and scrubbed stack frames. Sites, addresses, file paths with an account name and anything that
+    /// looks like a key are removed, each entry is capped, and the file is bounded and locked to its owner.
+    /// </summary>
     public static void Write(string dataRoot, string source, Exception exception)
     {
         try
         {
-            Directory.CreateDirectory(dataRoot);
             var text = new StringBuilder()
                 .AppendLine("---- " + DateTimeOffset.Now.ToString("O") + " · " + source)
-                .AppendLine(exception.ToString())
+                .AppendLine(LogScrubber.Scrub(exception.ToString()))
                 .AppendLine()
                 .ToString();
-            File.AppendAllText(PathFor(dataRoot), text, Encoding.UTF8);
+            LogScrubber.AppendBounded(PathFor(dataRoot), text);
         }
         catch
         {

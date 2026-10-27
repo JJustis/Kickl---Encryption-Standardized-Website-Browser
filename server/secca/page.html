@@ -45,6 +45,8 @@ ol{margin:.3rem 0 0;padding-left:1.2rem;color:var(--dim)}
     <li>Drop it below. The CA verifies the shop's signature, makes sure no other claim clashes, and writes it to its log.</li>
     <li>Download the sealed certificate. Import it in the Kickl Browser and your site shows <b>VERIFIED OWNER</b> to every visitor.</li>
   </ol>
+  <label for="ownerPass" class="dim" style="display:block;margin:.4rem 0 .2rem">Owner passphrase (optional, 8+ characters). The CA seals an HMAC of it into your claim, so the certificate file alone can no longer edit the name. Leave it blank and the claim stays unbound for good.</label>
+  <input type="password" id="ownerPass" autocomplete="new-password" placeholder="owner passphrase" style="width:100%;box-sizing:border-box;margin-bottom:.6rem">
   <div class="drop" id="drop" tabindex="0">Drop your .kcert file here, or click to choose it</div>
   <input type="file" id="file" accept=".kcert,.json,application/json" hidden>
   <div class="say" id="sealSay" hidden></div>
@@ -81,6 +83,22 @@ const when = t => t ? new Date(t * 1000).toLocaleString() : '—';
 const day = t => t ? new Date(t * 1000).toLocaleDateString() : '—';
 function say(el, html, cls){ el.hidden = false; el.className = 'say ' + (cls || ''); el.innerHTML = html; }
 
+// ---- owner binding: HMAC-SHA256(PBKDF2(passphrase, salt), "kickl/v1/owner-binding|site|seq|sha256hex(token)") ----------
+const hex = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
+const b64u = b => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+async function bind(receipt, pass){
+  const enc = new TextEncoder();
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const base = await crypto.subtle.importKey('raw', enc.encode(pass), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({name:'PBKDF2', hash:'SHA-256', salt, iterations:600000}, base, 256);
+  const hmacKey = await crypto.subtle.importKey('raw', bits, {name:'HMAC', hash:'SHA-256'}, false, ['sign']);
+  const commitment = hex(await crypto.subtle.digest('SHA-256', enc.encode(receipt.token)));
+  const msg = 'kickl/v1/owner-binding|' + String(receipt.site).toLowerCase() + '|' + receipt.seq + '|' + commitment;
+  receipt.ownerSalt = b64u(salt);
+  receipt.ownerBinding = hex(await crypto.subtle.sign('HMAC', hmacKey, enc.encode(msg)));
+  receipt.ownerKdf = 'pbkdf2-sha256-600k';
+}
+
 // ---- seal a certificate -------------------------------------------------------------------
 let sealedBlob = null, sealedName = '';
 async function seal(text){
@@ -88,6 +106,12 @@ async function seal(text){
   let receipt;
   try { receipt = JSON.parse(text); } catch { return say($('sealSay'), 'That file is not a certificate (it is not valid JSON).', 'bad'); }
   if (!receipt || receipt.kickl !== 'ownership-cert') return say($('sealSay'), 'That is not a Kickl ownership certificate.', 'bad');
+  const pass = $('ownerPass').value;
+  if (pass) {
+    if (pass.length < 8) return say($('sealSay'), 'The owner passphrase must be at least 8 characters, or leave it blank.', 'bad');
+    say($('sealSay'), 'Binding your passphrase…');
+    try { await bind(receipt, pass); } catch { return say($('sealSay'), 'This browser cannot compute the binding. Use the Kickl Browser instead.', 'bad'); }
+  }
   say($('sealSay'), 'Checking with the CA…');
   let r, j;
   try { r = await fetch(BASE + 'v1/ca/countersign', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(receipt)}); j = await r.json(); }

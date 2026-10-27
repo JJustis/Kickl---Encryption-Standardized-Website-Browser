@@ -221,6 +221,8 @@ with at least one encrypted blob that unlocks with a PIN, and a panic lock.
 - [x] ML-DSA-65 identity/envelope signatures, RSA-3072-wrapped per-message AES-256, Brotli 90k body,
   PNG private-chunk carrier
 - [x] Password-sealed SQLite vault, click-to-open inbox rows, image-page reader
+- [x] Direct mail over TLS 1.3 pinned to the recipient's own signed key; no downgrade; connection caps (2026-10-27)
+- [x] FreeChat key pinning, fingerprints and ML-DSA-signed messages (client side, 2026-10-27)
 - [ ] Mail outbox, retry, receipts, Bcc, sealed sender, attachments
 - [ ] SQLCipher store + migrations
 - [ ] Mailbox hash + epoch + token flow
@@ -431,6 +433,15 @@ with at least one encrypted blob that unlocks with a PIN, and a panic lock.
 - [ ] Gate note `G19.md` signed
 
 ---
+
+## Security audit (docs/24)
+
+- [x] Round 1-3 findings fixed: key files restricted, CA/shop keys DPAPI-wrapped, log scrubbing, SVG/PNG decompression bombs, path traversal, response-size caps, rate limits, mesh handshake, parser fuzzing
+- [x] Owner binding: shop-signed passphrase HMAC so a `.kcert` alone cannot edit a bound name
+- [x] One CA: the browser trusts only `https://secupgrade.com/secca/`
+- [ ] Move the CA root private key offline and delete the local copy
+- [ ] Independent penetration test
+- [ ] Members sign their room keys in FreeChat (needs the chat service to carry them)
 
 ## Cross-cutting (always)
 

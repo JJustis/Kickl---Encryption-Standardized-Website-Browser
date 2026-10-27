@@ -249,3 +249,258 @@ public class SessionCaTests
         Assert.Contains("real.com", attacker.OwnershipOf("copycat.com").VerifiedDetail);
     }
 }
+
+public class OwnerBindingTests
+{
+    private static BrowserSession Profile(string root, string id, string pin)
+    {
+        var s = new BrowserSession(root, id);
+        s.CreateProfile(pin);
+        s.Unlock(pin);
+        return s;
+    }
+
+    private static StoryDraft Draft(string host) => new()
+    {
+        Host = host, Headline = "h", Author = "t", Date = "2026-10-26", Html = "<div><p>x</p></div>", Tags = ["demo", "claim"]
+    };
+
+    [Fact]
+    public void Binding_RoundTrips_AndRejectsOtherPassphrases()
+    {
+        var commitment = new string('a', 64);
+        var (salt, mac) = OwnerBinding.Create("correct horse battery", "a.com", 3, commitment);
+        var seal = new CaSeal { Site = "a.com", Seq = 3, TokenCommitment = commitment, OwnerSalt = salt, OwnerBinding = mac };
+        Assert.True(OwnerBinding.Verify(seal, "correct horse battery"));
+        Assert.False(OwnerBinding.Verify(seal, "wrong horse battery!"));
+        Assert.False(OwnerBinding.Verify(seal, ""));
+        Assert.True(OwnerBinding.Verify(new CaSeal(), ""));   // nothing bound: nothing to prove
+        Assert.Throws<ClaimException>(() => OwnerBinding.Create("short", "a.com", 3, commitment));
+
+        // a binding made for one claim means nothing on another
+        var other = new CaSeal { Site = "b.com", Seq = 3, TokenCommitment = commitment, OwnerSalt = salt, OwnerBinding = mac };
+        Assert.False(OwnerBinding.Verify(other, "correct horse battery"));
+    }
+
+    [Fact]
+    public void TheCaSignsTheBinding_AndAnOldSealKeepsItsOldText()
+    {
+        using var f = new CaFixture();
+        var receipt = f.Shop.Sign("bound.com");
+        var (salt, mac) = OwnerBinding.Create("correct horse battery", "bound.com", receipt.Seq,
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Utf8.B(receipt.Token))).ToLowerInvariant());
+        receipt.OwnerSalt = salt;
+        receipt.OwnerBinding = mac;
+        var seal = f.Ca.Countersign(receipt, DateTimeOffset.UtcNow);
+        Assert.Equal(mac, seal.OwnerBinding);
+        Assert.True(CaTrust.VerifySeal(f.RootPublic, seal, "bound.com", DateTimeOffset.UtcNow, null, receipt.Seq).Verified);
+
+        // swapping the binding after the fact breaks the CA's signature
+        var forged = System.Text.Json.JsonSerializer.Deserialize<CaSeal>(System.Text.Json.JsonSerializer.Serialize(seal))!;
+        forged.OwnerBinding = new string('0', 64);
+        Assert.False(CaTrust.VerifySeal(f.RootPublic, forged, "bound.com", DateTimeOffset.UtcNow, null, receipt.Seq).Verified);
+
+        // resubmitting (for instance by someone who stole the file) returns the same bound seal, never a new unbound one
+        var stolen = f.Shop.Sign("bound.com");
+        Assert.Throws<CaRejectedException>(() => f.Ca.Countersign(stolen, DateTimeOffset.UtcNow));   // a different receipt for that seq is a conflict
+
+        // a seal made without a binding has no binding text at all
+        var plain = f.Ca.Countersign(f.Shop.Sign("plain.com"), DateTimeOffset.UtcNow);
+        Assert.Equal("", plain.OwnerBinding);
+        Assert.DoesNotContain("owner:", plain.Payload());
+
+        var bad = f.Shop.Sign("bad.com");
+        bad.OwnerSalt = "x"; bad.OwnerBinding = "nothex";
+        Assert.Throws<CaRejectedException>(() => f.Ca.Countersign(bad, DateTimeOffset.UtcNow));
+    }
+
+    [Fact]
+    public async Task ABoundName_NeedsThePassphrase_NotJustTheCertificateFile()
+    {
+        using var temp = new TempDir();
+        using var f = new CaFixture();
+        CaPins.RootOverride.Value = f.RootPublic;
+        var ca = new FakeCaServer(f);
+
+        using var owner = Profile(temp.Path, "owner", "pin-o");
+        owner.CreateSite(Draft("locked.com"));
+        await owner.ImportCertAsync("locked.com", f.Shop.Sign("locked.com").ToBytes(), f.Shop.Client());
+        Assert.True(owner.HoldsCert("locked.com"));
+
+        var check = await owner.SubmitToCaAsync("locked.com", ca.Client(), ownerPassphrase: "correct horse battery");
+        Assert.True(check.Verified, check.Reason);
+        Assert.True(owner.HoldsCert("locked.com"));   // proven during sealing
+
+        // the same certificate file (sealed, as the owner exports/downloads it) on a thief's profile: held, but locked
+        var file = owner.ExportCert("locked.com", "export passphrase");
+        using var thief = Profile(temp.Path, "thief", "pin-t");
+        await thief.ImportCertAsync("locked.com", file, f.Shop.Client(), passphrase: "export passphrase");
+        Assert.False(thief.HoldsCert("locked.com"));
+        Assert.True(thief.NeedsOwnerPassphrase("locked.com"));
+        Assert.Throws<ClaimException>(() => thief.ProveOwner("locked.com", "guess guess guess"));
+        Assert.False(thief.HoldsCert("locked.com"));
+        Assert.Throws<ClaimException>(() => thief.CreateSite(Draft("locked.com")));   // publishing is refused
+
+        thief.ProveOwner("locked.com", "correct horse battery");
+        Assert.True(thief.HoldsCert("locked.com"));
+        thief.Lock();
+        thief.Unlock("pin-t");
+        Assert.False(thief.HoldsCert("locked.com"));   // unlock again next session
+    }
+}
+
+public class WebOwnerBindingTests
+{
+    // Computed independently with Node's crypto, the same primitives the CA page's WebCrypto code calls
+    private const string Salt = "AAECAwQFBgcICQoLDA0ODw";
+    private const string Mac = "351037e1e067efebf8a9019a64d2ff2c53ef1afdf761f1905ed319b142d14bbd";
+
+    [Fact]
+    public void WebPageBinding_VerifiesInTheBrowser()
+    {
+        var seal = new CaSeal
+        {
+            Site = "a.com", Seq = 3, TokenCommitment = new string('a', 64),
+            OwnerSalt = Salt, OwnerBinding = Mac, OwnerKdf = OwnerBinding.WebKdf
+        };
+        Assert.True(OwnerBinding.Verify(seal, "correct horse battery"));
+        Assert.False(OwnerBinding.Verify(seal, "correct horse batterY"));
+        Assert.Contains("owner2:pbkdf2-sha256-600k:", seal.Payload());
+    }
+
+    [Fact]
+    public void TheCaSealsAWebBinding_AndRefusesUnknownKdfs()
+    {
+        using var f = new CaFixture();
+        var receipt = f.Shop.Sign("web.com");
+        receipt.OwnerSalt = Salt;
+        receipt.OwnerBinding = Mac;
+        receipt.OwnerKdf = OwnerBinding.WebKdf;
+        var seal = f.Ca.Countersign(receipt, DateTimeOffset.UtcNow);
+        Assert.Equal(OwnerBinding.WebKdf, seal.OwnerKdf);
+        Assert.True(CaTrust.VerifySeal(f.RootPublic, seal, "web.com", DateTimeOffset.UtcNow, null, receipt.Seq).Verified);
+
+        var odd = f.Shop.Sign("odd.com");
+        odd.OwnerSalt = Salt; odd.OwnerBinding = Mac; odd.OwnerKdf = "md5-lol";
+        Assert.Throws<CaRejectedException>(() => f.Ca.Countersign(odd, DateTimeOffset.UtcNow));
+    }
+}
+
+public class ShopBoundTests
+{
+    private const string Pass = "correct horse battery";
+
+    private static BrowserSession Profile(string root, string id, string pin)
+    {
+        var s = new BrowserSession(root, id);
+        s.CreateProfile(pin);
+        s.Unlock(pin);
+        return s;
+    }
+
+    private static StoryDraft Draft(string host) => new()
+    {
+        Host = host, Headline = "h", Author = "t", Date = "2026-10-26", Html = "<div><p>x</p></div>", Tags = ["demo", "claim"]
+    };
+
+    [Fact]
+    public void TheShopSignsTheBinding_SoItCannotBeStrippedOrReplaced()
+    {
+        using var f = new CaFixture();
+        var cert = f.Shop.Sign("bound.com", ownerPassphrase: Pass);
+        Assert.True(cert.IsShopBound);
+        Assert.True(SiteClaims.Verify(cert, f.Shop.Spki));
+        Assert.Contains("|bound:pbkdf2-sha256-600k-shop:", cert.Payload());
+
+        var stripped = OwnershipCert.Parse(cert.ToBytes());
+        stripped.BoundKdf = stripped.BoundSalt = stripped.BoundBinding = null;
+        Assert.False(SiteClaims.Verify(stripped, f.Shop.Spki));        // the shop's signature no longer matches
+
+        var other = OwnerBinding.CreateForShop("a different passphrase", "bound.com");
+        var swapped = OwnershipCert.Parse(cert.ToBytes());
+        (swapped.BoundKdf, swapped.BoundSalt, swapped.BoundBinding) = other;
+        Assert.False(SiteClaims.Verify(swapped, f.Shop.Spki));
+
+        Assert.True(OwnerBinding.Verify(cert, Pass));
+        Assert.False(OwnerBinding.Verify(cert, "wrong passphrase!"));
+        Assert.False(OwnerBinding.Verify(cert, ""));
+
+        // an unbound receipt is unaffected: same payload text as before
+        Assert.DoesNotContain("bound:", f.Shop.Sign("plain.com").Payload());
+    }
+
+    [Fact]
+    public void TheCaSealsTheShopsBinding_AndIgnoresWhatASealerAdds()
+    {
+        using var f = new CaFixture();
+        var cert = f.Shop.Sign("sealed.com", ownerPassphrase: Pass);
+        var (salt, mac) = OwnerBinding.Create("attackers own passphrase", "sealed.com", cert.Seq,
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Utf8.B(cert.Token))).ToLowerInvariant());
+        cert.OwnerSalt = salt; cert.OwnerBinding = mac; cert.OwnerKdf = null;   // a thief trying to bind first
+        var seal = f.Ca.Countersign(cert, DateTimeOffset.UtcNow);
+        Assert.Equal(cert.BoundBinding, seal.OwnerBinding);
+        Assert.Equal(OwnerBinding.WebKdfShop, seal.OwnerKdf);
+        Assert.True(OwnerBinding.Verify(seal, Pass));
+        Assert.False(OwnerBinding.Verify(seal, "attackers own passphrase"));
+        Assert.True(CaTrust.VerifySeal(f.RootPublic, seal, "sealed.com", DateTimeOffset.UtcNow, null, cert.Seq).Verified);
+    }
+
+    [Fact]
+    public async Task AStolenShopBoundFile_IsLocked_SealedOrNot_EvenWithTheSealRemoved()
+    {
+        using var temp = new TempDir();
+        using var f = new CaFixture();
+        CaPins.RootOverride.Value = f.RootPublic;
+        var ca = new FakeCaServer(f);
+        var cert = f.Shop.Sign("theft.com", ownerPassphrase: Pass);
+
+        using var thief = Profile(temp.Path, "thief", "pin-t");
+        thief.CreateSite(Draft("theft.com"));
+        await thief.ImportCertAsync("theft.com", cert.ToBytes(), f.Shop.Client());   // never sealed, no seal field at all
+        Assert.False(thief.HoldsCert("theft.com"));
+        Assert.True(thief.NeedsOwnerPassphrase("theft.com"));
+        Assert.Throws<ClaimException>(() => thief.CreateSite(Draft("theft.com")));
+        Assert.Throws<ClaimException>(() => thief.ProveOwner("theft.com", "guess guess guess"));
+
+        using var owner = Profile(temp.Path, "owner", "pin-o");
+        await owner.ImportCertAsync("theft.com", cert.ToBytes(), f.Shop.Client());
+        Assert.False(owner.HoldsCert("theft.com"));
+        owner.ProveOwner("theft.com", Pass);
+        Assert.True(owner.HoldsCert("theft.com"));
+        var check = await owner.SubmitToCaAsync("theft.com", ca.Client(), ownerPassphrase: Pass);
+        Assert.True(check.Verified, check.Reason);
+        Assert.True(owner.OwnershipOf("theft.com").Verified);
+    }
+}
+
+public class ShopPayloadParityTests
+{
+    // The strings below are what the live shop's claim_payload() printed for these inputs (PHP), so the two sides cannot drift apart
+    [Fact]
+    public void PhpShopAndBrowser_SignTheSameText()
+    {
+        var bound = new OwnershipCert
+        {
+            Site = "a.com", Order = 7, Seq = 2, PaidAt = 100, Expires = 200, Token = new string('b', 64),
+            BoundKdf = "pbkdf2-sha256-600k-shop", BoundSalt = "AAECAwQFBgcICQoLDA0ODw", BoundBinding = new string('c', 64)
+        };
+        Assert.Equal("kickl/v1/site-claim|a.com|7|2|100|200|" + new string('b', 64) +
+                     "|bound:pbkdf2-sha256-600k-shop:AAECAwQFBgcICQoLDA0ODw:" + new string('c', 64), bound.Payload());
+
+        var plain = new OwnershipCert { Site = "a.com", Order = 7, Seq = 2, PaidAt = 100, Expires = 200, Token = new string('b', 64) };
+        Assert.Equal("kickl/v1/site-claim|a.com|7|2|100|200|" + new string('b', 64), plain.Payload());
+    }
+
+    [Fact]
+    public void ShopBindingFromTheWebPage_VerifiesInTheBrowser()
+    {
+        // Node's crypto, same primitives as the shop page's WebCrypto: PBKDF2-SHA256 600k, HMAC over "...-shop|a.com"
+        var cert = new OwnershipCert
+        {
+            Site = "a.com", Token = new string('b', 64), BoundKdf = "pbkdf2-sha256-600k-shop",
+            BoundSalt = "AAECAwQFBgcICQoLDA0ODw", BoundBinding = "3dd0a3b47315a0616d0e1dad65000237206e23da2f814b2dc37cd161a449d952"
+        };
+        Assert.True(OwnerBinding.Verify(cert, "correct horse battery"));
+        Assert.False(OwnerBinding.Verify(cert, "correct horse batterY"));
+    }
+}

@@ -1,3 +1,15 @@
+# Everything here handles secrets (ownership certificates): never over plain http.
+# Requests from this computer are left alone so local tests keep working.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTPS} !=on
+  RewriteCond %{HTTP_HOST} !^(localhost|127\.0\.0\.1)(:[0-9]+)?$ [NC]
+  RewriteRule ^ https://secupgrade.com%{REQUEST_URI} [R=308,L]
+</IfModule>
+<IfModule mod_headers.c>
+  Header always set Strict-Transport-Security "max-age=31536000" "expr=%{HTTPS} == 'on'"
+</IfModule>
+
 DirectoryIndex index.php
 <IfModule mod_rewrite.c>
   RewriteEngine On

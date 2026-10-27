@@ -92,19 +92,58 @@ generate a new root on a clean offline machine, certify a new issuing key, repla
 `src/Kickl.Core/Trust/ca-root.json` with the new root's public key, rebuild, and move the root private files
 to offline storage.
 
-## 8. Trying it without Bitcoin
+## 8. One CA: secupgrade.com/secca
+
+The browser talks to exactly one CA, `https://secupgrade.com/secca/`. In a shipped (Release) build that address is a constant:
+plain http, any other host, any other port and any redirect are refused, a receipt is never sent anywhere else, and the CA
+root is only the one built into the browser (there is no root file in the data folder to override it). A different CA would need
+a different build.
+
+## 9. Trying it without Bitcoin
 
 `test-claims.bat` starts the browser against a throwaway test shop (`localhost/btcshop-test`, with a "mark as paid"
 button) and a throwaway test CA (`localhost/btcshop-test/secca`, its own root and ledger). It only answers this
 computer, uses a separate data folder, and shows **VERIFIED · TEST CA** so a test seal can never pass for a real
 one. The real CA refuses test-shop receipts, and the browser trusts the test root only while the
-`KICKL_TEST_CA_ROOT` variable the batch file sets is present. Delete `htdocs/btcshop-test`,
+`KICKL_TEST_CA_ROOT` variable the batch file sets is present, **and only in a Debug build**: Release browsers ignore both
+test settings. Delete `htdocs/btcshop-test`,
 `btcshop-test-private` and `%USERPROFILE%\kickl-test` when you are done.
 
-## 9. Known limits
+## 10. Known limits
 
 - A seal proves the CA saw a genuine receipt and logged it; it does not prove the buyer is a particular person.
 - Browsers do not yet check the log's **consistency over time** themselves (the audit does); a malicious CA that
   rewrote its log would be caught by an auditor, not by a single visitor.
 - The revocation list is fetched from the CA itself. A visitor who cannot reach it keeps the last list they saw.
 - The issuing key is online; the 90-day certificate bounds the damage if it leaks.
+
+## Owner binding (who may edit a sealed name)
+
+The shop's `.kcert` is a bearer file: whoever holds it could edit the name. To tie a claim to a person, the owner may choose an
+**owner passphrase** when the receipt is first sealed.
+
+- The browser computes `HMAC-SHA256(Argon2id(passphrase, salt), "kickl/v1/owner-binding|site|seq|token-commitment")` and sends only
+  the salt and the HMAC to the CA, in the receipt (they are not part of what the shop signed).
+- The CA checks they are well-formed, puts them in the **seal** and so under its hybrid signature and in the transparency log. The CA
+  never sees the passphrase. A seal made without them keeps exactly its old signed text.
+- A name whose seal carries a binding opens for editing only when the passphrase is given (`UNLOCK WITH OWNER PASSPHRASE`, or the
+  field on the `/edit` page). Importing the file on another profile leaves the name locked. The unlock lasts for the session.
+- Resubmitting a receipt returns the existing seal, so someone holding a copy cannot seal it again without the binding.
+
+Limits: the first seal decides. A claim sealed without a passphrase stays unbound, and a thief who seals a stolen file before the owner
+does would bind it themselves. Seal with the passphrase right after the purchase. The CA's web page takes the passphrase too (it uses PBKDF2-SHA256 with 600,000 rounds through WebCrypto, labelled `pbkdf2-sha256-600k` in the seal; the browser uses Argon2id); both verify in the browser. A copy of the file with its `seal` field removed is unbound until the browser next reaches the CA, which
+returns the bound seal.
+
+### The shop binds it at purchase (closes "the first seal decides")
+
+On the BTC shop page the buyer can type an owner passphrase before ordering. The page sends the shop only
+`HMAC-SHA256(PBKDF2-SHA256(passphrase, salt, 600,000), "kickl/v1/owner-binding-shop|site")` and the shop **signs it into the
+certificate** (`boundKdf`, `boundSalt`, `boundBinding`, appended to the signed text as `|bound:kdf:salt:binding`; a receipt
+without one signs exactly the old text). Because it is inside the shop's signature:
+
+- it cannot be stripped from the file or swapped for another (the signature stops verifying);
+- the CA seals the **shop's** binding and ignores any binding a sealer adds, so sealing first gains nothing;
+- the browser locks the name from the moment the file is imported, sealed or not, until the passphrase is given.
+
+The earlier seal-time binding (browser or CA page) still exists for receipts the shop did not bind. The shop's `config.php`,
+`api.php` and `index.php` live only on the server; they were patched in place (backups beside the user's profile folder).

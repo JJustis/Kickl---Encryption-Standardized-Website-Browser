@@ -149,6 +149,9 @@ host string (RAM, plaintext)
 - publisher records and signed tokens (`profiles/<profile-id>/ads/publishers.kpf`)
 - PFS lookup and search queries/responses
 - mesh frames
+- the direct-mail wire (TLS 1.3, pinned to the recipient's own key; see `docs/08` §12) and the mail identity's TLS key
+- FreeChat key pins, the FreeChat signing key and the stored credentials (`freechat-prefs`)
+- passphrase-sealed `.kcert` copies the browser saves (Argon2id + AES-256-GCM, bound to the site name)
 
 These profile files use purpose-separated HKDF keys derived from the unlocked master key and
 AES-256-GCM with the file purpose authenticated as associated data. Legacy plaintext saved-item,
@@ -165,7 +168,7 @@ None of the cryptography below protects these:
 - remote server memory, backups, logs
 - a compromised OS, firmware, or USB port
 - the TLS link to the BTC shop and to the CA: the ownership receipt, including its secret token, crosses it. Kickl keys do not protect that link
-- anyone who copies a `.kcert` file: whoever holds a certificate can edit the name until the claim expires
+- anyone who copies the shop's original `.kcert` when it was bought **without** an owner passphrase: whoever holds it can edit the name until the claim expires. A name bought with a passphrase is locked even to a copied file (gap 12)
 
 ## 5. Known gaps (do not claim otherwise)
 
@@ -181,9 +184,11 @@ None of the cryptography below protects these:
 10. **Clearnet is a different lane.** `http(s)://` is handed to the system browser and gets none of this.
 11. **Profile protection is incomplete.** Each local profile has its own key and directory, but profile names, published site markup, legacy drafts, and some profile-owned data remain plaintext. Published markup is the site's public payload; the shared public registry is intentionally outside profile encryption. Recovery, cloud sync, and complete at-rest coverage remain unfinished.
 
-12. **The receipt token travels over TLS only.** The shop hands the buyer a certificate containing a 32-byte secret token, and the owner sends it to the CA to be sealed. Both hops use ordinary HTTPS, not Kickl keys. The CA stores only `SHA-256(token)` and the seal is public, but a party that could read the TLS stream could copy the token. A certificate is a bearer credential.
+12. **The receipt token travels over TLS only, and a plain certificate is a bearer credential.** The shop hands the buyer a certificate containing a 32-byte secret token, and the owner sends it to the CA to be sealed. Both hops use ordinary HTTPS, not Kickl keys. The CA stores only `SHA-256(token)` and the seal is public, but a party that could read the TLS stream could copy the token. **Mitigation (owner binding, `docs/23`):** if the buyer types an owner passphrase on the shop page, the shop signs an HMAC of it into the certificate and the CA seals that; from then on the file alone cannot edit the name, a stripped or swapped binding breaks the shop's signature, and sealing first gains nothing. The passphrase is never sent to the shop or CA, only the HMAC. Names bought without a passphrase stay bearer files, and an unbound name can still be bound at seal time by whoever seals first. The token itself still crosses TLS; proving possession to the CA without sending it is not done.
 13. **A seal does not identify the buyer.** It proves the CA saw a genuine shop receipt, found no clash, and logged it. It does not prove who paid.
 14. **The issuing key is online.** The root private key is offline and its public half is built into the browser, but the issuing key that signs seals lives on the CA server. A 90-day certificate bounds the damage and the root can revoke it. Visitors check a seal against the log's inclusion proof, not the log's consistency over time; an auditor re-checks that.
+16. **FreeChat trusts its server for membership.** The server relays each member's public key and the wrapped group secret. Key pinning and signed messages (`docs/08` §12.1) catch a swap of a *known* member's key and any forged or replayed message from a signing member, but a member first seen after a malicious swap is trusted on first use, sender names on unsigned web-client messages are the server's word, and the roll tag only proves the server agrees with itself.
+17. **Direct mail reveals that a Kickl mail device exists at an address and port,** and when connections happen. The contents and envelope metadata are inside TLS 1.3 pinned to the recipient's key; the registry also publishes the endpoint, by design.
 15. **Games are sandboxed, not trusted.** A game has no imports, a fuel budget per call and a memory cap, so it cannot reach the network, files or clock and cannot freeze the browser. It can still draw anything on its picture, including misleading text, and a heavy game makes the page feel slow.
 
 > Rule: if a byte is not in the green/blue lanes above, it is not protected by Kickl.

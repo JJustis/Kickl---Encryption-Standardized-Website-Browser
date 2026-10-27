@@ -41,6 +41,16 @@ public sealed class CaSeal
     public long ReceiptExpires { get; set; }
     public long IssuedAt { get; set; }
 
+    /// <summary>
+    /// Optional owner binding, set when the owner sealed with a passphrase: the salt and the HMAC (see <c>OwnerBinding</c>) that tie this
+    /// claim to something only the owner knows. Part of what the CA signs and logs, so it cannot be swapped later. Empty = a claim
+    /// that is proven by holding the certificate alone, exactly as before.
+    /// </summary>
+    public string OwnerSalt { get; set; } = "";
+    public string OwnerBinding { get; set; } = "";
+    /// <summary>How the binding key was derived: empty = Argon2id (the browser); "pbkdf2-sha256-600k" = the CA's web page (WebCrypto).</summary>
+    public string OwnerKdf { get; set; } = "";
+
     public int LogIndex { get; set; }
     public int TreeSize { get; set; }
     public string TreeRoot { get; set; } = "";
@@ -55,11 +65,16 @@ public sealed class CaSeal
 
     /// <summary>What the transparency log stores for this seal (before it is hashed as a leaf).</summary>
     public string LeafText() =>
-        string.Join('|', "kickl/v1/ca-leaf", Site, Seq, ReceiptHash, TokenCommitment, ReceiptExpires, IssuedAt, IssuerFingerprint);
+        string.Join('|', "kickl/v1/ca-leaf", Site, Seq, ReceiptHash, TokenCommitment, ReceiptExpires, IssuedAt, IssuerFingerprint)
+        + BindingSuffix();
+
+    // Appended only when present, so every seal made before owner binding keeps exactly its old signed text
+    private string BindingSuffix() => OwnerBinding.Length == 0 ? ""
+        : OwnerKdf.Length == 0 ? $"|owner:{OwnerSalt}:{OwnerBinding}" : $"|owner2:{OwnerKdf}:{OwnerSalt}:{OwnerBinding}";
 
     public string Payload() =>
         string.Join('|', "kickl/v1/ca-seal", Site, Seq, ReceiptHash, TokenCommitment, ReceiptExpires, IssuedAt,
-            IssuerFingerprint, LogIndex, TreeSize, TreeRoot, string.Join(',', Proof));
+            IssuerFingerprint, LogIndex, TreeSize, TreeRoot, string.Join(',', Proof)) + BindingSuffix();
 
     public string HeadPayload() => HeadPayloadFor(TreeSize, TreeRoot, HeadTime);
 

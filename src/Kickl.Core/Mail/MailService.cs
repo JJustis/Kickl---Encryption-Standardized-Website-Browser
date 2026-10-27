@@ -121,6 +121,11 @@ public sealed class MailService : IDisposable
                         catch (Exception) { /* fall through to the original endpoint error */ }
                     }
 
+                    if (first.GetBaseException() is System.Security.Authentication.AuthenticationException)
+                        throw new MailServiceException(
+                            "The device at the recipient's endpoint did not present the TLS key they published, so the delivery was refused. " +
+                            "Either they changed devices and have not republished, or something is intercepting the connection.", null, first);
+
                     throw new MailServiceException(
                         "Could not reach the recipient's direct endpoint " + recipient.Endpoint +
                         ". The device must be online with mail unlocked, the port must be reachable " +
@@ -216,7 +221,9 @@ public sealed class MailService : IDisposable
         if (endpoint is null) return;
         _listener?.Stop();
         _listener = null;
-        var listener = new MailDeliveryServer(this, endpoint);
+        var certificate = Store.Identity?.TlsCertificate
+                          ?? throw new InvalidOperationException("The mail identity has no TLS key.");
+        var listener = new MailDeliveryServer(this, endpoint, certificate);
         listener.Start();
         _listener = listener;
     }

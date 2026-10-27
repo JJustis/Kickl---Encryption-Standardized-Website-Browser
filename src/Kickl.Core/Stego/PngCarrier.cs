@@ -67,6 +67,11 @@ public static class PngCarrier
         return output.ToArray();
     }
 
+    /// <summary>The largest picture accepted (width × height). A tiny PNG can claim a gigantic canvas; this is what we are willing to unpack.</summary>
+    public const long MaxPixels = 16_000_000;
+    private const int MaxTextChunks = 256;
+    private const int MaxTextBytes = 1 << 20;
+
     public static Image Read(byte[] png)
     {
         if (png.Length < Signature.Length + 25) throw new StegoException("Not a PNG file.");
@@ -78,6 +83,8 @@ public static class PngCarrier
         var sawHeader = false;
         using var idat = new MemoryStream();
         var text = new Dictionary<string, string>(StringComparer.Ordinal);
+        var textChunks = 0;
+        long textBytes = 0;
 
         while (pos + 12 <= png.Length)
         {
@@ -95,6 +102,8 @@ public static class PngCarrier
                     if (length != 13) throw new StegoException("Bad IHDR.");
                     width = BinaryPrimitives.ReadInt32BigEndian(data);
                     height = BinaryPrimitives.ReadInt32BigEndian(data[4..]);
+                    if (width <= 0 || height <= 0 || (long) width * height > MaxPixels)
+                        throw new StegoException("The picture is larger than this browser will unpack.");
                     if (data[8] != 8 || data[9] != 2 || data[12] != 0)
                         throw new StegoException("Only RGB8 non-interlaced PNG is supported.");
                     sawHeader = true;
@@ -104,6 +113,9 @@ public static class PngCarrier
                     break;
                 case "tEXt":
                 {
+                    textBytes += length;
+                    if (++textChunks > MaxTextChunks || textBytes > MaxTextBytes)
+                        throw new StegoException("The PNG carries too much text metadata.");
                     var bytes = data.ToArray();
                     var zero = Array.IndexOf(bytes, (byte)0);
                     if (zero > 0)
@@ -123,19 +135,33 @@ public static class PngCarrier
         if (!sawHeader || width <= 0 || height <= 0) throw new StegoException("Missing PNG header.");
 
         idat.Position = 0;
+        // Inflate only as much as the header says the picture needs (plus one byte to notice excess): a few kilobytes of
+        // compressed zeros must not be able to expand into gigabytes.
+        var stride = 1L + (long) width * 3;
+        var expected = stride * height;
         using var inflate = new ZLibStream(idat, CompressionMode.Decompress);
-        using var rawStream = new MemoryStream();
-        inflate.CopyTo(rawStream);
-        var raw = rawStream.ToArray();
-
-        var stride = 1 + width * 3;
-        if (raw.Length != stride * height) throw new StegoException("Unexpected PNG data length.");
+        var raw = new byte[expected];
+        var filled = 0;
+        try
+        {
+            while (filled < raw.Length)
+            {
+                var n = inflate.Read(raw, filled, raw.Length - filled);
+                if (n == 0) break;
+                filled += n;
+            }
+            if (filled != raw.Length || inflate.ReadByte() != -1) throw new StegoException("Unexpected PNG data length.");
+        }
+        catch (InvalidDataException)
+        {
+            throw new StegoException("The PNG image data is corrupt.");
+        }
 
         var rgb = new byte[width * height * 3];
         for (var y = 0; y < height; y++)
         {
-            if (raw[y * stride] != 0) throw new StegoException("Only filter 0 is supported.");
-            Buffer.BlockCopy(raw, y * stride + 1, rgb, y * width * 3, width * 3);
+            if (raw[(long) y * stride] != 0) throw new StegoException("Only filter 0 is supported.");
+            Buffer.BlockCopy(raw, (int) ((long) y * stride + 1), rgb, y * width * 3, width * 3);
         }
 
         return new Image(width, height, rgb, text);

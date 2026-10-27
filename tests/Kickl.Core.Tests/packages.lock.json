@@ -114,6 +114,11 @@
           "SQLitePCLRaw.core": "2.1.13"
         }
       },
+      "System.Security.Cryptography.ProtectedData": {
+        "type": "Transitive",
+        "resolved": "10.0.14",
+        "contentHash": "UuaBUHgmtc9h6CMxaQqFDDJxkS5JVy7XEB+DbtCvD68GFcVM9/AccuNwFpARx8nwCnvjaxzoOBjG3gPz32P1Eg=="
+      },
       "Wasmtime": {
         "type": "Transitive",
         "resolved": "48.0.2",
@@ -165,6 +170,7 @@
           "BouncyCastle.Cryptography": "[2.7.0, )",
           "HtmlAgilityPack": "[1.13.1, )",
           "Microsoft.Data.Sqlite": "[10.0.13, )",
+          "System.Security.Cryptography.ProtectedData": "[10.0.14, )",
           "Wasmtime": "[48.0.2, )"
         }
       }

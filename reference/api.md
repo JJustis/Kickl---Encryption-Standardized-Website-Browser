@@ -229,6 +229,11 @@ Sealed search response:
 
 ## Mail
 
+> **Spec vs. shipped.** This section is the planned store-and-forward mailbox API. The mail that ships today is *direct*:
+> the registry only holds the sender/recipient public bundle (`POST /v1/mail/identity`, `GET /v1/mail/lookup`) and the
+> sender POSTs the sealed message straight to the recipient device over TLS 1.3 pinned to the key in the bundle's
+> endpoint (`https://host:port#pin=...`). See `docs/08-mail-freechat.md` §12 and `server/README.md`.
+
 ### `POST /mail/{mailbox}/token`
 
 Signed. Returns `{ "token": "…", "expires": 1792800600 }` — `HMAC-SHA256(serverKey,

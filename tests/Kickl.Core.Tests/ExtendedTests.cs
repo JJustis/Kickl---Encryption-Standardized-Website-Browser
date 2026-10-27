@@ -677,6 +677,52 @@ public class MeshLinkTests
     }
 
     [Fact]
+    public void OfferFromAnUnpinnedDevice_IsRefused()
+    {
+        using var a = MeshDevice.Create();
+        using var b = MeshDevice.Create();
+        using var stranger = MeshDevice.Create();
+        using var offerLink = MeshLink.Offer(stranger, b, out var offer);   // validly signed, but not by who b pinned
+        Assert.Throws<MeshException>(() => MeshLink.Accept(b, offer, out _, expectedPeerId: a.DeviceId));
+        using var ok = MeshLink.Accept(b, offer, out _, expectedPeerId: stranger.DeviceId);
+    }
+
+    [Fact]
+    public void HandshakeKeys_AreRefusedWhenNotP256_OrNotKeys()
+    {
+        using var a = MeshDevice.Create();
+        using var b = MeshDevice.Create();
+
+        using var link1 = MeshLink.Offer(a, b, out var wrongCurve);
+        using (var p384 = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP384))
+            wrongCurve.EphemeralPublicKey = p384.ExportSubjectPublicKeyInfo();
+        wrongCurve.Signature = a.Sign($"kickl/v1/mesh-offer|{wrongCurve.FromDeviceId}|{wrongCurve.ToDeviceId}|" +
+            $"{Convert.ToBase64String(wrongCurve.EphemeralPublicKey)}|{Convert.ToBase64String(wrongCurve.HandshakeNonce)}");
+        Assert.Throws<MeshException>(() => MeshLink.Accept(b, wrongCurve, out _));
+
+        using var link2 = MeshLink.Offer(a, b, out var garbage);
+        garbage.EphemeralPublicKey = [1, 2, 3];
+        garbage.Signature = a.Sign($"kickl/v1/mesh-offer|{garbage.FromDeviceId}|{garbage.ToDeviceId}|" +
+            $"{Convert.ToBase64String(garbage.EphemeralPublicKey)}|{Convert.ToBase64String(garbage.HandshakeNonce)}");
+        Assert.Throws<MeshException>(() => MeshLink.Accept(b, garbage, out _));
+    }
+
+    [Fact]
+    public void FrameWithAForeignNonce_IsRefused()
+    {
+        var (a, b, ab, ba) = Pair();
+        using (a)
+        using (b)
+        using (ab)
+        using (ba)
+        {
+            var frame = ab.Send(Utf8.B("hello"));
+            frame.Nonce = new byte[12];
+            Assert.Throws<MeshException>(() => ba.Receive(frame));
+        }
+    }
+
+    [Fact]
     public void TamperedFrameIsRejected()
     {
         var (a, b, ab, ba) = Pair();
@@ -687,7 +733,7 @@ public class MeshLinkTests
         {
             var frame = ab.Send(Utf8.B("sealed"));
             frame.Ciphertext[0] ^= 1;
-            Assert.ThrowsAny<CryptographicException>(() => ba.Receive(frame));
+            Assert.Throws<MeshException>(() => ba.Receive(frame));
         }
     }
 }

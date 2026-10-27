@@ -182,18 +182,18 @@ public static class OwnershipAuthority
     };
 
     public static string SecretPath(string usbDir, string site) =>
-        Path.Combine(usbDir, $"kickl-owner-{site}.key");
+        Path.Combine(usbDir, $"kickl-owner-{SafeNames.RequireHost(site)}.key");
 
     public static string PublicPath(string usbDir, string site) =>
-        Path.Combine(usbDir, $"kickl-owner-{site}.pub.json");
+        Path.Combine(usbDir, $"kickl-owner-{SafeNames.RequireHost(site)}.pub.json");
 
     private static string SharedDir(DataPaths paths) => Path.Combine(paths.Root, "shared", "ownership");
 
     public static string PublicPath(DataPaths paths, string site) =>
-        Path.Combine(SharedDir(paths), $"{site}.pub.json");
+        Path.Combine(SharedDir(paths), $"{SafeNames.RequireHost(site)}.pub.json");
 
     public static string TitlePath(DataPaths paths, string site) =>
-        Path.Combine(SharedDir(paths), $"{site}.title.json");
+        Path.Combine(SharedDir(paths), $"{SafeNames.RequireHost(site)}.title.json");
 
     // ------------------------------------------------------------ key ceremony
 
@@ -771,10 +771,5 @@ public static class OwnershipAuthority
         "kb1b" + Convert.ToHexString(SHA256.HashData(Utf8.B($"{site}|{ownerId}|{seq}|{now:O}")))
             .ToLowerInvariant()[..16];
 
-    private static void RestrictToOwner(string path)
-    {
-        if (OperatingSystem.IsWindows()) return;
-        try { File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite); }
-        catch (IOException) { /* filesystem without modes */ }
-    }
+    private static void RestrictToOwner(string path) => FileProtection.Restrict(path);
 }

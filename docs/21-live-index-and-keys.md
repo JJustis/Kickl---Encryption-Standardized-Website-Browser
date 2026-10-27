@@ -15,14 +15,22 @@ This document captures the rules agreed after the encryption map (`docs/20`):
 |---|---|---|---|
 | Registry name lookup | fresh P-256 ECDH per lookup → HKDF-SHA384 → AES-256-GCM | yes | implemented |
 | Live-index search | fresh P-256 ECDH per search → HKDF-SHA384 → AES-256-GCM | yes | implemented (slice) |
-| Device mesh link | fresh P-256 ECDH per link → HKDF-SHA256 → two AES-256-GCM keys; RSA-3072 signs the offer | yes | implemented |
-| Mail / chat | HPKE + ratchet (production) | yes, by ratchet | spec only |
+| Device mesh link | fresh P-256 ECDH per link → HKDF-SHA256 (salted with the whole handshake transcript) → two AES-256-GCM keys; RSA-3072 signs the offer and accept | yes | implemented, hardened 2026-10-27 |
+| Direct mail delivery | TLS 1.3, ECDSA P-256 device key pinned in the signed endpoint (`#pin=`) | yes (TLS 1.3 ephemeral) | implemented 2026-10-27 |
+| FreeChat | ML-KEM-1024 wraps a group secret; per-epoch HKDF keys; ML-DSA-65 message signatures; TOFU key pins | no (group secret is long-lived per room) | implemented (client side) |
+| Mail / chat ratchet | HPKE + ratchet (production) | yes, by ratchet | spec only |
 | Clearnet `http(s)` | TLS to the remote site, handled by the system browser | not ours | out of scope |
 
 **RSA does not transport the link key any more.** The earlier mesh design wrapped an AES key with
 RSA-OAEP. That is encrypted, but it is not forward-secret: whoever later obtains the device's RSA
 private key can decrypt recorded links. The mesh now does ephemeral ECDH and uses RSA only to sign
 the offer/accept, binding the one-time keys to the pinned device identity.
+
+**Mesh hardening (2026-10-27).** `Accept` takes the id of the device it expects (`expectedPeerId`): a valid
+signature only proves the sender holds *some* key, and the id is what ties it to a device this one agreed to
+talk to. Callers must pass it. The link keys are salted with a hash of both device ids, both ephemeral keys and
+the nonce, only P-256 handshake keys are accepted (another curve or garbage is a clean refusal), a frame whose
+nonce is not the counter's is refused, and the send counter cannot wrap into nonce reuse.
 
 The same rule applies to the registry server: its record-signing key may be long-lived, but every
 lookup/search session gets a fresh P-256 key pair and the session key is destroyed on return.
@@ -198,7 +206,9 @@ The top screen never shows decrypted blobs, mail, chat, or the ownership token.
 | Content SHA-256 published + verified before parse/render | done, tested |
 | Wrong hash fails closed and increments the attack counter | done, tested |
 | Anonymous `POST /registry/mismatch` reporting | spec only; slice increments the local mirror |
-| Mesh ephemeral ECDH + RSA-signed offers | done, tested |
+| Mesh ephemeral ECDH + RSA-signed offers, transcript-bound keys, pinned peer id | done, tested |
+| Direct mail over pinned TLS 1.3 | done, tested |
+| FreeChat key pins + signed messages | done, tested |
 | Per-opening session P-256 identity | done, tested |
 | `/legenddxI2` HTTP deployment | spec only; slice uses the local registry mirror |
 | PHP/MariaDB registry + signed snapshot/delta sync | done locally (head, snapshot, delta, key, operator register; `kickl registry sync`) |

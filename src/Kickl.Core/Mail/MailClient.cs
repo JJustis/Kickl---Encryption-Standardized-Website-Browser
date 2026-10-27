@@ -28,7 +28,7 @@ public sealed class MailClient : IDisposable
     public MailClient(string? baseUrl = null, HttpClient? http = null)
     {
         _ownsHttp = http is null;
-        _http = http ?? new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        _http = (http ?? new HttpClient { Timeout = TimeSpan.FromSeconds(15) }).Limit(HttpLimits.Mail);
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("KicklMail/0.1");
         var baseValue = baseUrl ?? DefaultBase;
         _baseUri = new Uri(baseValue.EndsWith('/') ? baseValue : baseValue + "/", UriKind.Absolute);
@@ -75,7 +75,27 @@ public sealed class MailClient : IDisposable
         if (string.IsNullOrWhiteSpace(recipient.Endpoint))
             throw new MailServiceException("The recipient has not advertised a direct mail endpoint.");
 
-        using var response = await PostJsonAsync(new Uri(MailEndpoint.DeliveryUrl(recipient.Endpoint)),
+        Uri address;
+        string pin;
+        try { (address, pin) = MailEndpoint.Secure(recipient.Endpoint); }
+        catch (FormatException ex) { throw new MailServiceException(ex.Message, null, ex); }
+
+        // A client of its own for each delivery: TLS 1.3 only, and the ONLY thing it checks is that the server holds the key the recipient
+        // published. The certificate chain and host name mean nothing for a device on a LAN address; the pin is the whole trust decision.
+        using var handler = new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            ConnectTimeout = TimeSpan.FromSeconds(10),
+            SslOptions = new System.Net.Security.SslClientAuthenticationOptions
+            {
+                EnabledSslProtocols = System.Security.Authentication.SslProtocols.Tls13,
+                CertificateRevocationCheckMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.NoCheck,
+                RemoteCertificateValidationCallback = (_, certificate, _, _) => MailTls.PinMatches(certificate, pin)
+            }
+        };
+        using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30), MaxResponseContentBufferSize = 64 * 1024 };
+
+        using var response = await PostJsonAsync(http, new Uri(address, MailEndpoint.Path),
             new
             {
                 envelope,
@@ -85,13 +105,16 @@ public sealed class MailClient : IDisposable
         await ReadObjectAsync(response, "deliver", cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<HttpResponseMessage> PostJsonAsync(Uri uri, object body,
+    private Task<HttpResponseMessage> PostJsonAsync(Uri uri, object body, CancellationToken cancellationToken) =>
+        PostJsonAsync(_http, uri, body, cancellationToken);
+
+    private static async Task<HttpResponseMessage> PostJsonAsync(HttpClient http, Uri uri, object body,
         CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, uri);
         request.Content = new StringContent(JsonSerializer.Serialize(body, MailJson.Options),
             Encoding.UTF8, "application/json");
-        return await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        return await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<JsonDocument> ParseAsync(HttpResponseMessage response, string action,

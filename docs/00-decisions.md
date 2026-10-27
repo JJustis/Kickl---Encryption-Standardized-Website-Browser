@@ -564,3 +564,14 @@ rotation audit. `nickles.js` must be documented as a manifest to avoid implying 
 - [ ] Confirm Nickles plugin boundary (what the core exposes).
 - [ ] Confirm Sentinel approval flow (who clicks "publish").
 - [ ] Confirm Linux distro support matrix.
+
+
+## Decisions of 2026-10-27 (security hardening)
+
+| ID | Decision | Why |
+|----|----------|-----|
+| D-S1 | **Direct mail is TLS 1.3 with a key pin carried in the signed endpoint** (`https://host:port#pin=...`); plain http or an unpinned endpoint is refused, never downgraded to. | A LAN address has no certificate authority; the identity signature already authenticates the endpoint string, so the pin is authenticated for free and no new trust root is needed. |
+| D-S2 | **The browser trusts exactly one CA, `https://secupgrade.com/secca/`.** Test overrides exist only in Debug builds. | One audited trust path; a shipped build cannot be pointed elsewhere by an environment variable. |
+| D-S3 | **Owner binding:** the buyer's passphrase is turned into an HMAC (never sent), signed into the receipt by the shop, and sealed by the CA. | A `.kcert` file alone should not be enough to edit a name; binding at purchase removes the "whoever seals first decides" gap. |
+| D-S4 | **FreeChat stays compatible with the existing service;** authentication is added client-side (pinned member keys, signed messages in a PNG trailer). | The service and its web client keep working; the remaining gap (server decides membership) is documented, not hidden. |
+| D-S5 | **CA and shop signing keys are DPAPI-wrapped on Windows;** key files are ACL-restricted on every platform. | Offline copies of the files are not usable; the key still works for the account that runs the server. |

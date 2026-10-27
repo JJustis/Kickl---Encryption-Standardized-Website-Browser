@@ -11,6 +11,10 @@
 
 declare(strict_types=1);
 
+// Never show PHP errors to a visitor: they carry file paths and internals. (php.ini has display_errors On.)
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
+
 // In the repository this folder sits next to server/src. Deployed under a web root (for example htdocs/secca), set
 // KICKL_APP_ROOT to the server/ directory (SetEnv in .htaccess or the host panel).
 if (getenv('KICKL_APP_ROOT') === false || getenv('KICKL_APP_ROOT') === '') {

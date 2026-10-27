@@ -26,7 +26,7 @@
   </defs>
 
   <text x="24" y="38" class="h" style="font-size:24px;letter-spacing:.04em">KICKL · ENCRYPTION MAP</text>
-  <text x="24" y="64" class="sub">Where plaintext exists, and where it does not. Slice build · 2026-10-26 · AES-256-GCM everywhere symmetric; hybrid Ed25519 + ML-DSA-65 for the CA.</text>
+  <text x="24" y="64" class="sub">Where plaintext exists, and where it does not. Slice build · 2026-10-27 · AES-256-GCM everywhere symmetric; hybrid Ed25519 + ML-DSA-65 for the CA.</text>
 
   <g transform="translate(900,30)">
     <rect x="0" y="0" width="11" height="11" fill="#7ee787"/><text x="17" y="10" class="sub">plaintext</text>
@@ -204,10 +204,10 @@
     <rect class="box" width="436" height="176" rx="8"/>
     <text x="16" y="26" class="h">B · device mesh link</text>
     <text x="16" y="50" class="m">ephemeral P-256 ECDH per link</text>
-    <text x="16" y="70" class="m">→ HKDF-SHA256 → two directional keys</text>
+    <text x="16" y="70" class="m">→ HKDF-SHA256 (whole transcript) → 2 keys</text>
     <text x="16" y="90" class="m">frames: AES-GCM + strict counters</text>
     <text x="16" y="110" class="ct">sees: device ids, frame sizes</text>
-    <text x="16" y="132" class="key">RSA-3072 signs; never transports</text>
+    <text x="16" y="132" class="key">RSA-3072 signs; peer id pinned; P-256 only</text>
     <text x="16" y="154" class="m">one-time keys die with the link</text>
   </g>
 
@@ -228,6 +228,21 @@
     <text x="16" y="112" class="m">metadata is not encrypted here</text>
   </g>
 
+  <g transform="translate(940,884)">
+    <rect class="box" width="436" height="104" rx="8"/>
+    <text x="16" y="26" class="h">E · direct mail delivery</text>
+    <text x="16" y="50" class="m">TLS 1.3 to a key pinned in the signed endpoint</text>
+    <text x="16" y="70" class="ct">sees: that a mail device is at that address</text>
+    <text x="16" y="90" class="key">no plain http · no downgrade · 16 connections</text>
+  </g>
+
+  <g transform="translate(940,1002)">
+    <rect class="box" width="436" height="96" rx="8"/>
+    <text x="16" y="26" class="h">F · FreeChat</text>
+    <text x="16" y="50" class="m">ML-KEM-1024 group secret · ML-DSA-65 signed</text>
+    <text x="16" y="70" class="warn">server still decides who is in the room ← limit</text>
+  </g>
+
   <!-- ownership, the CA and games -->
   <text x="24" y="1150" class="h" style="font-size:20px">Ownership, the CA, and games</text>
   <text x="330" y="1150" class="sub">Claiming a name is paid at the BTC shop; the CA watches and seals; a game is a sandbox with nothing to reach.</text>
@@ -242,10 +257,10 @@
     <text x="16" y="130" class="pt">title.json holds only SHA-256(token)</text>
     <text x="16" y="150" class="m">checked again every time you press edit</text>
     <text x="16" y="174" class="warn">the receipt crosses the network over TLS only   ← limit</text>
-    <text x="16" y="194" class="warn">whoever steals the file owns the name</text>
-    <text x="16" y="216" class="m">unclaimed names stay free for anyone to edit</text>
-    <text x="16" y="238" class="m">claimed: publishing needs the current certificate</text>
-    <text x="16" y="258" class="m">a re-claim (higher claim no.) retires the old one</text>
+    <text x="16" y="194" class="pt">owner binding: shop signs HMAC(passphrase) into it</text>
+    <text x="16" y="216" class="warn">bought without a passphrase: the file owns the name</text>
+    <text x="16" y="238" class="m">claimed: publishing needs the certificate + passphrase</text>
+    <text x="16" y="258" class="m">unclaimed names stay free; a re-claim retires the old</text>
   </g>
 
   <g transform="translate(482,1168)">
@@ -319,9 +334,9 @@
     <text x="18" y="106" class="inv">stego envelope JSON</text>
     <text x="18" y="130" class="inv">ownership token</text>
     <text x="18" y="154" class="inv">keystroke cells</text>
-    <text x="18" y="178" class="inv">PFS lookup traffic · mesh frames</text>
+    <text x="18" y="178" class="inv">PFS lookup traffic · mesh frames · mail on the wire</text>
     <text x="18" y="202" class="inv">page markup · protected blobs (need the access key)</text>
-    <text x="18" y="226" class="inv">ownership certificates · game saves</text>
+    <text x="18" y="226" class="inv">ownership certificates · saved .kcert copies · game saves · FreeChat keys</text>
   </g>
 
   <g transform="translate(716,1790)">
@@ -334,13 +349,13 @@
     <text x="18" y="154" class="inv">remote server memory and backups</text>
     <text x="18" y="178" class="inv">a compromised OS, firmware, or USB port</text>
     <text x="18" y="202" class="inv">the TLS link to the BTC shop and the CA (receipt travels here)</text>
-    <text x="18" y="226" class="inv">anyone who copies your .kcert file</text>
+    <text x="18" y="226" class="inv">a copied .kcert that was bought without a passphrase</text>
   </g>
 
   <g transform="translate(24,2050)">
     <rect x="0" y="0" width="1352" height="86" rx="6" fill="#141b25" stroke="#263241"/>
     <text x="16" y="26" class="note">Rule: if a byte is not in the green or amber lists, it is not plaintext.</text>
     <text x="16" y="48" class="note">Public pages are sealed at rest but open for any reader by design; only the access key protects protected blobs.</text>
-    <text x="16" y="70" class="note">A seal proves the CA saw and logged a genuine receipt, not who the buyer is. The receipt token reaches the CA over TLS only; the CA keeps a hash, never the token.</text>
+    <text x="16" y="70" class="note">A seal proves the CA saw and logged a genuine receipt, not who the buyer is. The token reaches the CA over TLS only; the CA keeps a hash. A passphrase (owner binding) locks the file.</text>
   </g>
 </svg>

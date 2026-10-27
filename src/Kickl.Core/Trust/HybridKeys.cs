@@ -7,6 +7,8 @@ using Org.BouncyCastle.Crypto.Signers;
 
 namespace Kickl.Core.Trust;
 
+public enum KeyProtection { None, Machine }
+
 /// <summary>Domain labels. A signature made for one purpose can never be replayed as another.</summary>
 public static class TrustDomains
 {
@@ -74,17 +76,99 @@ public sealed class HybridSigner : IDisposable
 
     public string Sign(string domain, string text) => Sign(domain, Encoding.UTF8.GetBytes(text));
 
-    /// <summary>Private key files for an offline signer: <c>ed25519.seed</c> (hex) and <c>mldsa65.pkcs8</c> (b64url).</summary>
-    public void SaveTo(string dir)
+    private const string ProtectedSuffix = ".dpapi";
+    private static readonly byte[] Entropy = Utf8.B("kickl/v1/ca-key-file");
+
+    /// <summary>Where a signer's key files stand: <c>Machine</c> (wrapped by Windows DPAPI), <c>None</c> (plain), or null if absent.</summary>
+    public static KeyProtection? ProtectionOf(string dir)
     {
-        Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, "ed25519.seed"), Hashing.Hex(Seed));
-        File.WriteAllText(Path.Combine(dir, "mldsa65.pkcs8"), B64u.Encode(MlDsaPkcs8));
+        if (File.Exists(Path.Combine(dir, "ed25519.seed" + ProtectedSuffix))) return KeyProtection.Machine;
+        return File.Exists(Path.Combine(dir, "ed25519.seed")) ? KeyProtection.None : null;
     }
 
-    public static HybridSigner LoadFrom(string dir) => Load(
-        Convert.FromHexString(File.ReadAllText(Path.Combine(dir, "ed25519.seed")).Trim()),
-        B64u.Decode(File.ReadAllText(Path.Combine(dir, "mldsa65.pkcs8")).Trim()));
+    /// <summary>
+    /// Save the private key files and lock the folder to the current account.
+    /// <see cref="KeyProtection.Machine"/> additionally wraps them with Windows DPAPI (machine scope) so a copied or
+    /// backed-up file cannot be read anywhere else. An OFFLINE root must stay <see cref="KeyProtection.None"/>: it has to
+    /// be able to move to another machine. On other platforms Machine falls back to a 0600 file. Returns what was applied.
+    /// </summary>
+    public KeyProtection SaveTo(string dir, KeyProtection protection = KeyProtection.None)
+    {
+        Directory.CreateDirectory(dir);
+        var seedPath = Path.Combine(dir, "ed25519.seed");
+        var mlPath = Path.Combine(dir, "mldsa65.pkcs8");
+        var seed = Utf8.B(Hashing.Hex(Seed));
+        var ml = Utf8.B(B64u.Encode(MlDsaPkcs8));
+        var wrap = false;
+        try
+        {
+            if (OperatingSystem.IsWindows() && protection == KeyProtection.Machine)
+            {
+                wrap = true;
+                File.WriteAllBytes(seedPath + ProtectedSuffix, ProtectBytes(seed));
+                File.WriteAllBytes(mlPath + ProtectedSuffix, ProtectBytes(ml));
+                FileProtection.Shred(seedPath);      // a plaintext copy must not linger beside the wrapped one
+                FileProtection.Shred(mlPath);
+            }
+            else
+            {
+                File.WriteAllBytes(seedPath, seed);
+                File.WriteAllBytes(mlPath, ml);
+                FileProtection.Shred(seedPath + ProtectedSuffix);
+                FileProtection.Shred(mlPath + ProtectedSuffix);
+            }
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(seed);
+            CryptographicOperations.ZeroMemory(ml);
+        }
+        FileProtection.RestrictTree(dir);
+        return wrap ? KeyProtection.Machine : KeyProtection.None;
+    }
+
+    /// <summary>
+    /// Load a signer from its key files, wrapped or plain. With <paramref name="upgrade"/> a plain key is rewritten as a
+    /// wrapped one on Windows, so existing installations pick up the protection the next time they run.
+    /// </summary>
+    public static HybridSigner LoadFrom(string dir, bool upgrade = false)
+    {
+        var wasPlain = ProtectionOf(dir) == KeyProtection.None;
+        var seedText = ReadSecret(Path.Combine(dir, "ed25519.seed"));
+        var mlText = ReadSecret(Path.Combine(dir, "mldsa65.pkcs8"));
+        var signer = Load(Convert.FromHexString(seedText), B64u.Decode(mlText));
+        if (upgrade && wasPlain && OperatingSystem.IsWindows()) signer.SaveTo(dir, KeyProtection.Machine);
+        return signer;
+    }
+
+    private static string ReadSecret(string path)
+    {
+        byte[] bytes;
+        if (File.Exists(path + ProtectedSuffix))
+        {
+            if (!OperatingSystem.IsWindows())
+                throw new PlatformNotSupportedException("This key is wrapped with Windows DPAPI and can only be opened on the machine that wrapped it.");
+            bytes = UnprotectBytes(File.ReadAllBytes(path + ProtectedSuffix));
+        }
+        else
+        {
+            bytes = File.ReadAllBytes(path);
+        }
+
+        try { return Encoding.UTF8.GetString(bytes).Trim(); }
+        finally { CryptographicOperations.ZeroMemory(bytes); }
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static byte[] ProtectBytes(byte[] plain) =>
+        System.Security.Cryptography.ProtectedData.Protect(plain, Entropy, System.Security.Cryptography.DataProtectionScope.LocalMachine);
+
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static byte[] UnprotectBytes(byte[] wrapped)
+    {
+        try { return System.Security.Cryptography.ProtectedData.Unprotect(wrapped, Entropy, System.Security.Cryptography.DataProtectionScope.LocalMachine); }
+        catch (CryptographicException ex) { throw new CryptographicException("This key file was wrapped on a different machine or has been altered.", ex); }
+    }
 
     public void Dispose()
     {

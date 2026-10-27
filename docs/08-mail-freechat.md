@@ -271,9 +271,44 @@ The live app now has a working mail slice that follows the brief's direct-delive
 - **Direct endpoint caveat.** The advertised endpoint is the device's LAN address and a free port.
   Remote delivery needs that port forwarded (or an endpoint update via `PUBLISH`). A wrong mail
   password is an authentication failure and leaves the vault untouched.
+- **The wire is TLS 1.3 with a pinned key** (hardened 2026-10-27). Each mail identity carries a
+  self-signed ECDSA P-256 TLS key, kept inside the encrypted identity. The advertised endpoint is
+  `https://host:port#pin=<base64url SHA-256 of that key>`; the identity's ML-DSA signature covers the
+  endpoint string, so the pin is authenticated. A sender accepts only a server holding the pinned key
+  (no certificate chain or host-name check applies on a LAN address), and refuses `http://` or unpinned
+  endpoints: there is no downgrade. The envelope metadata (sender handle, ids, time) is therefore not
+  readable or alterable on the wire. The listener is also built for hostile peers: at most 16
+  simultaneous connections (the rest are dropped), a handshake timeout and a hard 30 s deadline per
+  connection, chunked or duplicate-length requests rejected, and generic error text. The registry
+  accepts only `https://host:port#pin=...` endpoints. An identity made before this change is upgraded
+  and re-signed when the vault is unlocked, then republished; until then other people cannot reach it.
+  What a network observer still learns: that a Kickl mail device is at that address and port, and when
+  connections happen. Tested in `MailTransportTests`.
+
+### 12.1 FreeChat as shipped (hardened 2026-10-27)
+
+The room is still the existing PHP service and ML-KEM-1024 group secret; nothing there changed. On top of
+it the client now does the following, all on the client side so the service and web client keep working:
+
+- **Server address must be https** (the PIN and cookie go there).
+- **Member keys are pinned (trust on first use).** The first ML-KEM key seen for a username is stored
+  in the encrypted profile. A different key later shows `KEY CHANGED`, is given no group secret, and
+  needs ACCEPT KEY after the two people compare the fingerprints shown in the member list.
+- **Messages are signed.** Each member has an ML-DSA-65 signing key (encrypted profile). The signed
+  trailer is appended after the PNG's end marker, where every PNG reader ignores it. The signature
+  covers the room, epoch, message position, sender id and name, the image bytes and a hash of the
+  sender's own ML-KEM key. Receivers pin the signing key per member and label every message: signed,
+  signed (new key), signing key changed, forged or wrong sender, or unsigned (web client).
+- **Bounded input:** member list and per-poll message count are capped; shared secrets are zeroed after use.
+
+Still true: the server decides who is in a room, so a member first seen after a malicious swap is trusted
+on first use; compare fingerprints for anything sensitive. The roll tag only proves the server agrees with
+itself. Unsigned web-client messages are accepted and labelled. See `docs/24-security-audit.md`.
 
 ## 13. Implementation checklist (2026-10-25)
 
+- [x] Direct-mail transport lock-down: TLS 1.3, pinned per-device key, no downgrade, connection caps (2026-10-27).
+- [x] FreeChat key pinning, fingerprints and signed messages (client side, 2026-10-27).
 - [ ] Mail storage, inbox/compose/read UI, sealed sender, Bcc, outbox, attachments, and receipts.
 - [ ] Mail delivery API, idempotency, mailbox tokens, blind-index search, and deletion semantics.
 - [x] Pinwheel FreeChat v1: native room panel over the live PHP API, ML-KEM-1024 join handshake,

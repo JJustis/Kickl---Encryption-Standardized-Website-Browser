@@ -11,6 +11,20 @@ sanitized inline HTML/SVG visuals are implemented.
 **Working name:** Kickl Browser (trademark screen pending) · **Prepared:** 2026-10-24
 **Canonical scheme:** `jttp://name.custom/`
 
+## Install
+
+Short version (needs the [.NET 10 SDK](https://dotnet.microsoft.com/download)):
+
+```bash
+git clone https://github.com/JJustis/Kickl---Encryption-Standardized-Website-Browser.git
+cd Kickl---Encryption-Standardized-Website-Browser
+dotnet build Kickl.slnx -c Release
+dotnet run --project src/Kickl.Browser -c Release -- --demo --data .kickl-demo    # sign in with 1234
+```
+
+Windows users can also run the prebuilt `KicklBrowser-windows-x64.exe` from the download page. The registry server,
+the CA and claiming names are optional. **Full instructions, requirements and troubleshooting: [INSTALL.md](INSTALL.md).**
+
 ### Current implementation
 
 - `Kickl.Browser` is the primary app: tabs, omnibox, history, sealed-page rendering, blob unlock,
@@ -67,6 +81,27 @@ sanitized inline HTML/SVG visuals are implemented.
   append-only transparency log, and a sealed site shows **VERIFIED OWNER** to every visitor. Every CA signature is
   hybrid Ed25519 + ML-DSA-65. `test-claims.bat` runs the whole flow against a throwaway test shop and test CA with no
   Bitcoin. See `docs/23-certificate-authority.md`.
+- **Owner binding.** When you seal a claim you can choose an **owner passphrase**. The browser sends the CA only an HMAC
+  of it (Argon2id key, bound to the name and claim); the CA signs and logs that inside the seal. From then on holding the
+  `.kcert` file is not enough to edit the name: the editor must also give the passphrase. Copies the browser saves are
+  themselves passphrase-sealed. Best of all, type the passphrase on the BTC shop page when you order: the shop then signs the binding into the
+  certificate itself, so it cannot be stripped, swapped, or beaten by someone sealing first.
+- **Direct mail is TLS 1.3 with a pinned key.** Each device's mail endpoint is `https://host:port#pin=...`, where the pin
+  is a hash of that device's own TLS key and is covered by the identity's post-quantum signature, so a sender accepts only
+  that key and refuses plain-http or unpinned endpoints. The listener caps connections and times out slow peers.
+- **FreeChat remembers member keys and signs messages.** The first ML-KEM key seen for a username is pinned in your
+  encrypted profile; a different key later is shown as KEY CHANGED and gets no room secret until you compare fingerprints
+  and accept it. Every message you send carries an ML-DSA-65 signature (in a trailer old clients ignore), and each message
+  you receive is labelled signed, new key, key changed, forged, or unsigned.
+- **Owner binding.** When you seal a claim you can choose an **owner passphrase**. The browser sends the CA only an HMAC
+  of it (Argon2id key, bound to the name and claim); the CA signs and logs that inside the seal. From then on holding the
+  `.kcert` file is not enough to edit the name: the editor must also give the passphrase. Copies the browser saves are
+  themselves passphrase-sealed. Seal with the passphrase the first time: a claim sealed without one stays unbound.
+- **Direct mail is TLS 1.3 with a pinned key.** Each device's mail endpoint is `https://host:port#pin=…`, where the pin
+  is a hash of that device's own TLS key and is covered by the identity's post-quantum signature, so a sender accepts only
+  that key and refuses plain-http or unpinned endpoints. The listener caps connections and times out slow peers.
+- **FreeChat remembers member keys.** The first ML-KEM key seen for a username is pinned in your encrypted profile; a
+  different key later is shown as KEY CHANGED and gets no room secret until you compare fingerprints and accept it.
 - **Games** are sealed WebAssembly modules run in a capability-free sandbox (no imports, fuel-metered, memory-capped);
   try `jttp://game-lab.custom`. See `docs/22-wasm-games.md`.
 - **Public and protected content.** Page text and public blobs are encrypted at rest but open to every reader;
@@ -121,6 +156,10 @@ page), `artifacts/sealed-inline.png` (inline SVG with a click-to-unlock sealed i
 | 20 | [`docs/19-hardware-device.md`](docs/19-hardware-device.md) | Two-screen handheld: front RSS, four USB ports, two mini-SD holders, paired dongles, MicroCore | hardware / product |
 | 21 | [`docs/20-encryption-map.md`](docs/20-encryption-map.md) | Visual map of the encryption flow and the complete plaintext inventory | everyone |
 | 22 | [`docs/21-live-index-and-keys.md`](docs/21-live-index-and-keys.md) | PFS on every Kickl link, temporal keys, tagged live index, click prompt | security / backend |
+| 23 | [`docs/22-wasm-games.md`](docs/22-wasm-games.md) | Sealed WebAssembly games in a capability-free sandbox | engineering / security |
+| 24 | [`docs/23-certificate-authority.md`](docs/23-certificate-authority.md) | The Kickl CA, seals, transparency log, owner binding | security / backend |
+| 25 | [`docs/24-security-audit.md`](docs/24-security-audit.md) | In-house security audit: findings, fixes, and what is still open | security |
+| 26 | [`docs/25-doc-review.md`](docs/25-doc-review.md) | Which documents were re-read against the code, and their status | everyone |
 | — | [`CHECKLIST.md`](CHECKLIST.md) | **Tickable master checklist** — one line per deliverable | everyone |
 | — | [`reference/api.md`](reference/api.md) | Kickl HTTP/PFS API v1 | backend |
 | — | [`server/README.md`](server/README.md) | Registry server setup, endpoints, and current limits | backend |

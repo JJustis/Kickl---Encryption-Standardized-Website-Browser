@@ -453,7 +453,8 @@ internal static class HtmlBlockView
     {
         if (header.Contains("svg+xml", StringComparison.OrdinalIgnoreCase))
         {
-            var source = SvgSource.LoadFromSvg(Encoding.UTF8.GetString(bytes));
+            // never hand raw SVG bytes to the renderer: a sealed blob's type is chosen by the page's author
+            var source = SvgSource.LoadFromSvg(Kickl.Core.Markup.InlineHtml.SanitizeSvgFile(Encoding.UTF8.GetString(bytes)));
             return new Image
             {
                 Source = new SvgImage { Source = source },

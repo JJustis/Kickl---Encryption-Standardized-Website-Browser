@@ -128,6 +128,10 @@ public sealed class MailStore : IDisposable
     {
         if (_msk is not null) return;
         var (salt, iterations, nonce, wrapped) = ReadVault();
+        // The count is stored in the database file, so a tampered file chooses it. Too high is a hang on unlock; too low would
+        // weaken the next wrap. Refuse anything outside what this build could ever have written.
+        if (iterations < 100_000 || iterations > 5_000_000)
+            throw new CryptographicException("The mail vault has an unsupported key-derivation setting and cannot be opened.");
         var kek = Derive(password, salt, iterations);
         byte[] msk;
         try
@@ -203,10 +207,8 @@ public sealed class MailStore : IDisposable
     public void UpdateEndpoint(string endpoint)
     {
         if (_identity is null) throw new InvalidOperationException("No mail identity is loaded.");
-        if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
-            throw new ArgumentException("The mail endpoint must be an absolute http(s) URL.", nameof(endpoint));
-        _identity.Bundle.Endpoint = endpoint.TrimEnd('/');
-        _identity.Bundle.Sig = _identity.Sign(_identity.Bundle.CanonicalBytes());
+        // Whatever is typed, what is published is https with this device's TLS pin; it is not possible to publish plain http.
+        _identity.SetEndpoint(endpoint);
         SaveIdentity(_identity, registered: false);
     }
 
@@ -422,6 +424,7 @@ public sealed class MailStore : IDisposable
             Token = identity.Token,
             RsaPkcs8 = identity.RsaPkcs8,
             MlDsaPkcs8 = identity.MlDsaPkcs8,
+            TlsPkcs12 = identity.TlsPkcs12,
             Registered = registered
         };
         var plain = JsonSerializer.SerializeToUtf8Bytes(file, Json);
@@ -471,13 +474,18 @@ public sealed class MailStore : IDisposable
     private MailIdentity? LoadIdentity()
     {
         var file = LoadIdentityFile();
-        return file is null ? null : RestoreIdentity(file);
+        if (file is null) return null;
+        var identity = RestoreIdentity(file);
+        // An identity from before mail was TLS-only was just given a transport key and a pinned https endpoint. Save that, and mark it
+        // unpublished so the next unlock republishes it: until then the registry still lists the old plain-http endpoint.
+        if (identity.TransportUpgraded) SaveIdentity(identity, registered: false);
+        return identity;
     }
 
     private static MailIdentity RestoreIdentity(MailIdentityFile file)
     {
         var bundle = MailIdentityBundle.Parse(file.Bundle);
-        return MailIdentity.Restore(bundle, file.Token, file.RsaPkcs8, file.MlDsaPkcs8);
+        return MailIdentity.Restore(bundle, file.Token, file.RsaPkcs8, file.MlDsaPkcs8, file.TlsPkcs12);
     }
 
     private (byte[] Salt, int Iterations, byte[] Nonce, byte[] Wrapped) ReadVault()
@@ -546,6 +554,7 @@ public sealed class MailStore : IDisposable
         public string Token { get; set; } = "";
         public byte[] RsaPkcs8 { get; set; } = [];
         public byte[] MlDsaPkcs8 { get; set; } = [];
+        public byte[] TlsPkcs12 { get; set; } = [];
         public bool Registered { get; set; }
     }
 }

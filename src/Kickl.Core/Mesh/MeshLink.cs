@@ -136,28 +136,45 @@ public sealed class MeshLink : IDisposable
         $"{Convert.ToBase64String(responderEphemeral)}|" +
         $"{Convert.ToBase64String(nonce)}";
 
-    private static (byte[] Send, byte[] Recv) DeriveKeys(MeshDevice self, MeshDevice peer,
-        byte[] rawSecret, byte[] nonce)
+    /// <summary>
+    /// The link keys are bound to the whole handshake (both device ids, both ephemeral keys, the nonce), not just the shared secret,
+    /// so two sessions can never end up with the same keys, and a key from one transcript means nothing in another.
+    /// </summary>
+    private static (byte[] Send, byte[] Recv) DeriveKeys(string selfId, string peerId, string initiatorId, string responderId,
+        byte[] initiatorEphemeral, byte[] responderEphemeral, byte[] rawSecret, byte[] nonce)
     {
-        var both = Hkdf.Derive(rawSecret, nonce, OfferInfo, 64);
-        var first = both[..32];
-        var second = both[32..];
-        CryptographicOperations.ZeroMemory(both);
-
-        var selfIsA = string.CompareOrdinal(self.DeviceId, peer.DeviceId) < 0;
-        return selfIsA ? (first, second) : (second, first);
-    }
-
-    private static (byte[] Send, byte[] Recv) DeriveKeys(string selfId, string peerId,
-        byte[] rawSecret, byte[] nonce)
-    {
-        var both = Hkdf.Derive(rawSecret, nonce, OfferInfo, 64);
+        var salt = SHA256.HashData(Utf8.B($"{OfferInfo}|{initiatorId}|{responderId}|" +
+            $"{Convert.ToBase64String(initiatorEphemeral)}|{Convert.ToBase64String(responderEphemeral)}|{Convert.ToBase64String(nonce)}"));
+        var both = Hkdf.Derive(rawSecret, salt, OfferInfo, 64);
         var first = both[..32];
         var second = both[32..];
         CryptographicOperations.ZeroMemory(both);
 
         var selfIsA = string.CompareOrdinal(selfId, peerId) < 0;
         return selfIsA ? (first, second) : (second, first);
+    }
+
+    /// <summary>Only a P-256 key is accepted; anything else (another curve, garbage) is a refused handshake, not a crash.</summary>
+    private static ECDiffieHellman ImportP256(byte[] spki)
+    {
+        var key = ECDiffieHellman.Create();
+        try
+        {
+            key.ImportSubjectPublicKeyInfo(spki, out _);
+            if (key.ExportParameters(false).Curve.Oid.Value != ECCurve.NamedCurves.nistP256.Oid.Value)
+                throw new MeshException("The link uses a key on an unsupported curve.");
+            return key;
+        }
+        catch (Exception ex) when (ex is CryptographicException or ArgumentException)
+        {
+            key.Dispose();
+            throw new MeshException("The link key is not valid.");
+        }
+        catch (MeshException)
+        {
+            key.Dispose();
+            throw;
+        }
     }
 
     /// <summary>Initiator: create a one-time ECDH key and a signed offer. Nothing is sent yet.</summary>
@@ -190,8 +207,14 @@ public sealed class MeshLink : IDisposable
     /// the link keys immediately, and return a signed accept. The ephemeral private keys are
     /// discarded here; no long-term key can reconstruct them.
     /// </summary>
-    public static MeshLink Accept(MeshDevice self, MeshLinkOffer offer, out MeshLinkAccept accept)
+    /// <param name="expectedPeerId">
+    /// The device this link must come from (the pinned id). An offer signed by any other key is refused: a valid signature only
+    /// proves the sender holds <i>some</i> key, and the id is what ties it to a device this one agreed to talk to.
+    /// </param>
+    public static MeshLink Accept(MeshDevice self, MeshLinkOffer offer, out MeshLinkAccept accept, string? expectedPeerId = null)
     {
+        if (expectedPeerId is not null && !string.Equals(offer.FromDeviceId, expectedPeerId, StringComparison.Ordinal))
+            throw new MeshException("This offer is from a device that was not expected.");
         if (!string.Equals(offer.ToDeviceId, self.DeviceId, StringComparison.Ordinal))
             throw new MeshException("This offer is addressed to a different device.");
 
@@ -201,16 +224,19 @@ public sealed class MeshLink : IDisposable
         if (!MeshDevice.Verify(offer.FromRsaSpki, OfferPayload(offer), offer.Signature))
             throw new MeshException("The link offer signature is invalid.");
 
-        using var initiator = ECDiffieHellman.Create();
-        initiator.ImportSubjectPublicKeyInfo(offer.EphemeralPublicKey, out _);
+        if (offer.HandshakeNonce.Length != 16)
+            throw new MeshException("The link offer has a malformed nonce.");
+        using var initiator = ImportP256(offer.EphemeralPublicKey);
 
         using var responder = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        var responderEphemeral = responder.ExportSubjectPublicKeyInfo();
         var raw = responder.DeriveRawSecretAgreement(initiator.PublicKey);
         byte[] send;
         byte[] recv;
         try
         {
-            (send, recv) = DeriveKeys(self.DeviceId, offer.FromDeviceId, raw, offer.HandshakeNonce);
+            (send, recv) = DeriveKeys(self.DeviceId, offer.FromDeviceId, offer.FromDeviceId, self.DeviceId,
+                offer.EphemeralPublicKey, responderEphemeral, raw, offer.HandshakeNonce);
         }
         finally
         {
@@ -220,7 +246,7 @@ public sealed class MeshLink : IDisposable
         accept = new MeshLinkAccept
         {
             DeviceId = self.DeviceId,
-            EphemeralPublicKey = responder.ExportSubjectPublicKeyInfo()
+            EphemeralPublicKey = responderEphemeral
         };
         accept.Signature = self.Sign(AcceptPayload(offer.FromDeviceId, self.DeviceId,
             offer.EphemeralPublicKey, accept.EphemeralPublicKey, offer.HandshakeNonce));
@@ -247,13 +273,13 @@ public sealed class MeshLink : IDisposable
                 accept.Signature))
             throw new MeshException("The link accept signature is invalid.");
 
-        using var responder = ECDiffieHellman.Create();
-        responder.ImportSubjectPublicKeyInfo(accept.EphemeralPublicKey, out _);
+        using var responder = ImportP256(accept.EphemeralPublicKey);
 
         var raw = _pendingEcdh.DeriveRawSecretAgreement(responder.PublicKey);
         try
         {
-            var (send, recv) = DeriveKeys(_selfId, _peerId, raw, _handshakeNonce);
+            var (send, recv) = DeriveKeys(_selfId, _peerId, _selfId, _peerId,
+                _offerEphemeralPublicKey, accept.EphemeralPublicKey, raw, _handshakeNonce);
             _sendKey = send;
             _recvKey = recv;
         }
@@ -272,6 +298,8 @@ public sealed class MeshLink : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_sendKey is null) throw new MeshException("Complete the handshake before sending.");
+        if (_sendCounter == uint.MaxValue)
+            throw new MeshException("This link has sent the most frames it safely can. Open a new link.");
         var counter = ++_sendCounter;
         var nonce = Aead.CounterNonce(counter);
         var ciphertext = Aead.SealWithNonce(_sendKey, nonce, plaintext, Aad(counter, _side));
@@ -285,8 +313,12 @@ public sealed class MeshLink : IDisposable
         if (frame.Counter != _recvCounter + 1)
             throw new MeshException($"Frame counter {frame.Counter} is not the next expected value.");
 
-        var plaintext = Aead.Open(_recvKey, frame.Nonce, frame.Ciphertext,
-            Aad(frame.Counter, _peerSide));
+        // The nonce is a function of the counter; a frame that carries any other nonce is not from an honest peer
+        if (!CryptographicOperations.FixedTimeEquals(frame.Nonce, Aead.CounterNonce(frame.Counter)))
+            throw new MeshException("The frame's nonce does not match its counter.");
+        byte[] plaintext;
+        try { plaintext = Aead.Open(_recvKey, frame.Nonce, frame.Ciphertext, Aad(frame.Counter, _peerSide)); }
+        catch (CryptographicException) { throw new MeshException("The frame failed authentication."); }
         _recvCounter++;
         return plaintext;
     }

@@ -107,7 +107,7 @@ public sealed class RegistryClient
         ArgumentNullException.ThrowIfNull(verifier);
         if (!baseUri.IsAbsoluteUri) throw new ArgumentException("The base URI must be absolute.", nameof(baseUri));
 
-        _http = http;
+        _http = http.Limit(HttpLimits.Registry);
         _baseUri = baseUri.AbsoluteUri.EndsWith('/') ? baseUri : new Uri(baseUri.AbsoluteUri + "/");
         _verifier = verifier;
         _keyFingerprint = keyFingerprint;

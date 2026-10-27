@@ -19,6 +19,14 @@ public static class InlineHtml
     public const int MaxChars = 96 * 1024;
     public const int MaxNodes = 8_192;
     public const int MaxDepth = 48;
+    /// <summary>
+    /// The most elements one fragment may cost to DRAW once references are expanded. A &lt;use&gt;, a paint server or a mask
+    /// pulls in everything it points at, so a tiny SVG can expand exponentially ("billion laughs"): measured against the real
+    /// renderer, 10^6 draws from 1.6 KB hangs it for over 20 seconds. The cap equals the plain node budget, so references can
+    /// never make a fragment cost more than a fragment of that many plain nodes.
+    /// </summary>
+    public const int MaxExpandedElements = MaxNodes;
+    public const int MaxReferenceDepth = 128;
     public const string BlobPrefix = "kickl-blob:";
 
     private static readonly HashSet<string> Dropped = new(StringComparer.OrdinalIgnoreCase)
@@ -109,11 +117,27 @@ public static class InlineHtml
                 SanitizeHtmlElement(node);
         }
 
+        ValidateExpansion(root);
+
         var body = root.SelectSingleNode("//body");
         var result = (body ?? root).InnerHtml.Trim();
         if (result.Length > MaxChars)
             throw new KmlException($"Sanitized inline HTML exceeds {MaxChars / 1024} KiB.");
         return result;
+    }
+
+    /// <summary>
+    /// An SVG that arrives as a FILE (a sealed image blob) gets exactly the treatment inline SVG does: the same allow-lists, size
+    /// and node budgets and reference-expansion cap. A hostile site's package chooses its own blob types, so this is the only
+    /// thing standing between its "image" and the renderer. Returns the sanitized &lt;svg&gt;; throws if it is not safe to draw.
+    /// </summary>
+    public static string SanitizeSvgFile(string svgText)
+    {
+        if (string.IsNullOrWhiteSpace(svgText)) throw new KmlException("The SVG is empty.");
+        var clean = Sanitize(svgText);
+        var start = clean.IndexOf("<svg", StringComparison.OrdinalIgnoreCase);
+        if (start < 0) throw new KmlException("The file contains no usable <svg> element.");
+        return clean[start..];
     }
 
     private static void SanitizeHtmlElement(HtmlNode node)
@@ -191,7 +215,7 @@ public static class InlineHtml
                 else attr.Value = style;
                 continue;
             }
-            if (attrName is "fill" or "stroke")
+            if (attrName is "fill" or "stroke" or "filter" or "mask" or "clip-path")
             {
                 if (!IsSafePaint(attr.Value ?? ""))
                 {
@@ -324,6 +348,83 @@ public static class InlineHtml
             if (depth > MaxDepth) throw new KmlException($"Inline HTML exceeds {MaxDepth} levels of nesting.");
             foreach (var child in node.ChildNodes)
                 pending.Push((child, depth + 1));
+        }
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex UrlRef =
+        new(@"url\(\s*['""]?#([^)'""\s]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// Reject a fragment whose references multiply its drawing cost past <see cref="MaxExpandedElements"/>, or that point back at
+    /// themselves. Each element costs one plus its children plus everything it references (<c>href="#id"</c>, <c>url(#id)</c>).
+    /// </summary>
+    private static void ValidateExpansion(HtmlNode root)
+    {
+        var elements = root.DescendantsAndSelf().Where(n => n.NodeType == HtmlNodeType.Element).ToList();
+        var byId = new Dictionary<string, HtmlNode>(StringComparer.Ordinal);
+        foreach (var e in elements)
+        {
+            var id = e.GetAttributeValue("id", "");
+            if (id.Length > 0) byId.TryAdd(id, e);
+        }
+
+        var memo = new Dictionary<HtmlNode, long>();
+        var visiting = new HashSet<HtmlNode>();
+
+        long Cost(HtmlNode node, int depth)
+        {
+            if (memo.TryGetValue(node, out var known)) return known;
+            if (depth > MaxReferenceDepth) throw new KmlException($"Inline SVG references nest more than {MaxReferenceDepth} deep.");
+            if (!visiting.Add(node)) throw new KmlException("Inline SVG references form a cycle.");
+
+            long total = 1;
+            foreach (var child in node.ChildNodes)
+            {
+                if (child.NodeType != HtmlNodeType.Element) continue;
+                // A definition (defs, a gradient, a symbol, a mask...) draws nothing where it is defined. It costs something only
+                // when a reference reaches it, and that is counted at the reference.
+                total += NonRendering.Contains(child.Name) ? 1 : Cost(child, depth + 1);
+                if (total > MaxExpandedElements) throw TooExpensive();
+            }
+            foreach (var target in ReferencedBy(node, byId))
+            {
+                total += Cost(target, depth + 1);
+                if (total > MaxExpandedElements) throw TooExpensive();
+            }
+
+            visiting.Remove(node);
+            return memo[node] = total;
+        }
+
+        // Check everything that is actually drawn: elements that sit inside a definition are only ever reached by reference.
+        foreach (var e in elements)
+            if (!e.Ancestors().Any(a => NonRendering.Contains(a.Name)) && !NonRendering.Contains(e.Name))
+                Cost(e, 0);
+    }
+
+    private static readonly HashSet<string> NonRendering = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "defs", "symbol", "pattern", "mask", "clippath", "marker", "lineargradient", "radialgradient", "filter"
+    };
+
+    private static KmlException TooExpensive() =>
+        new($"Inline SVG would draw more than {MaxExpandedElements} elements once its references are expanded.");
+
+    private static IEnumerable<HtmlNode> ReferencedBy(HtmlNode node, Dictionary<string, HtmlNode> byId)
+    {
+        foreach (var attr in node.Attributes)
+        {
+            var value = attr.Value ?? "";
+            var name = attr.Name.ToLowerInvariant();
+            if (name is "href" or "xlink:href")
+            {
+                var v = value.Trim();
+                if (v.StartsWith('#') && byId.TryGetValue(v[1..], out var target)) yield return target;
+                continue;
+            }
+            if (!value.Contains("url(", StringComparison.OrdinalIgnoreCase)) continue;
+            foreach (System.Text.RegularExpressions.Match m in UrlRef.Matches(value))
+                if (byId.TryGetValue(m.Groups[1].Value, out var t)) yield return t;
         }
     }
 

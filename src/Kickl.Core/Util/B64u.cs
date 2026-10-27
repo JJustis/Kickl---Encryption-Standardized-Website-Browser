@@ -45,7 +45,7 @@ public sealed class DataPaths
     public string Keystore => Path.Combine(ProfileRoot, "keys", "keystore.json");
     public string Registry => Path.Combine(Root, "shared", "registry.json");
     public string RegistryState => Path.Combine(Root, "shared", "registry-state.json");
-    public string SiteDoc(string host) => Path.Combine(ProfileRoot, "sites", host, "doc.json");
+    public string SiteDoc(string host) => Path.Combine(ProfileRoot, "sites", SafeNames.RequireHost(host), "doc.json");
     public string RelayKey => Path.Combine(ProfileRoot, "keys", "relay.json");
     public string Drafts => Path.Combine(ProfileRoot, "drafts");
     public string NicklesPublishers => Path.Combine(ProfileRoot, "ads", "publishers.kpf");

@@ -44,6 +44,41 @@ public static class DocumentStore
 {
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
 
+    /// <summary>The most a stored or delivered site package may weigh. The largest real one is a few MiB.</summary>
+    public const long MaxDocumentBytes = 64L << 20;
+    public const int MaxBlobs = 512;
+    public const long MaxBlobBytes = 32L << 20;
+
+    /// <summary>
+    /// Read a package from disk without trusting its size or shape: a hostile site controls its own file, and one that expands to
+    /// gigabytes, or claims thousands of blobs, must be refused before it is held in memory.
+    /// </summary>
+    internal static SealedDocument ReadDocumentFile(string path)
+    {
+        if (new FileInfo(path).Length > MaxDocumentBytes)
+            throw new IntegrityException("The document is larger than any site package may be.");
+        var doc = JsonSerializer.Deserialize<SealedDocument>(File.ReadAllText(path))
+                  ?? throw new IntegrityException("The document is unreadable.");
+        ValidateShape(doc);
+        return doc;
+    }
+
+    public static void ValidateShape(SealedDocument doc)
+    {
+        if (doc.Blobs.Count > MaxBlobs)
+            throw new IntegrityException($"The document claims {doc.Blobs.Count} blobs; the limit is {MaxBlobs}.");
+        long total = 0;
+        foreach (var (_, blob) in doc.Blobs)
+        {
+            if (blob.Ciphertext.Length > MaxBlobBytes)
+                throw new IntegrityException("A blob in the document is larger than any blob may be.");
+            total += blob.Ciphertext.Length;
+        }
+        if (total > MaxDocumentBytes) throw new IntegrityException("The document's blobs together are larger than any site package may be.");
+        if (doc.SealedMarkup is { } m && m.Ciphertext.Length > 1024 * 1024)
+            throw new IntegrityException("The document's page text is larger than any page may be.");
+    }
+
     private static string BlobAad(string host, string id) => $"kickl/v1/blob|{host}|{id}";
     private static string DocKeyAad(string host) => $"kickl/v1/doc-key|{host}";
 
@@ -218,7 +253,7 @@ public static class DocumentStore
         var attached = false;
         foreach (var path in DocCandidates(paths, record, host).Where(File.Exists))
         {
-            var onDisk = JsonSerializer.Deserialize<SealedDocument>(File.ReadAllText(path));
+            var onDisk = ReadDocumentFile(path);
             if (onDisk is null || !string.Equals(onDisk.Site, host, StringComparison.OrdinalIgnoreCase)) continue;
             onDisk.Seal = seal;
             File.WriteAllText(path, Serialize(onDisk));
@@ -290,7 +325,7 @@ public static class DocumentStore
         var record = LocalRegistry.Resolve(LocalRegistry.LoadOrEmpty(paths), doc.Site);
         foreach (var path in DocCandidates(paths, record, doc.Site).Where(File.Exists))
         {
-            var onDisk = JsonSerializer.Deserialize<SealedDocument>(File.ReadAllText(path));
+            var onDisk = ReadDocumentFile(path);
             if (onDisk is null || !onDisk.DocKey.Ciphertext.SequenceEqual(doc.DocKey.Ciphertext)) continue;
             if (onDisk.SealedMarkup is null) SealPublic(onDisk, docKey);
             File.WriteAllText(path, Serialize(onDisk));
@@ -309,8 +344,7 @@ public static class DocumentStore
         SealedDocument? first = null;
         foreach (var path in DocCandidates(paths, record, host).Where(File.Exists))
         {
-            var candidate = JsonSerializer.Deserialize<SealedDocument>(File.ReadAllText(path))
-                            ?? throw new IntegrityException("The document is unreadable.");
+            var candidate = ReadDocumentFile(path);
             first ??= candidate;
             if (string.Equals(candidate.Integrity, record.ContentHash, StringComparison.OrdinalIgnoreCase))
             {
@@ -336,8 +370,10 @@ public static class DocumentStore
     private static IEnumerable<string> DocCandidates(DataPaths paths, RegistryRecord? record, string host)
     {
         yield return paths.SiteDoc(host);
-        if (record is not null && !string.IsNullOrWhiteSpace(record.DocFile))
-            yield return Path.Combine(paths.Root, record.DocFile.Replace('/', Path.DirectorySeparatorChar));
+        // DocFile arrives with registry data. It may only name a file inside the data folder: a rooted path or a ".." would
+        // otherwise make the browser read (and the seal/key upgrade rewrite) any file on disk.
+        if (record is not null && SafeNames.ResolveUnder(paths.Root, record.DocFile) is { } inside)
+            yield return inside;
     }
 
     public static string ComputeIntegrity(SealedDocument doc)

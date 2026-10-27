@@ -135,3 +135,10 @@ The demo shows the file hash changing while the extracted content stays identica
 - optional "panic blur" that re-seals every revealed region immediately;
 - audit the LSB implementation and add a statistical test that the carrier does not stand out more
   than necessary.
+
+
+## Reader limits (2026-10-27)
+
+`PngCarrier.Read` is handed images from strangers (a mail image, a cached carrier), so it refuses to be a bomb: the canvas is capped at
+16 million pixels (a header claiming more, or a width/height that overflows, is refused before anything is allocated), inflation stops at
+the size the header implies and any excess is an error, and text metadata is capped at 256 chunks / 1 MiB. Tests: `PngBombTests`.

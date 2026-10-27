@@ -17,6 +17,32 @@ internal sealed class LocalDongleProcessTransport : IDongleTransport
 
     public LocalDongleProcessTransport(PairedDongleIdentity identity) => _identity = identity;
 
+    /// <summary>
+    /// The full path of the .NET host. Starting "dotnet" by bare name would run whatever file of that name the search path or
+    /// working directory offers first; the host is looked up in the places the runtime installs itself instead.
+    /// </summary>
+    private static string DotnetHost()
+    {
+        var exe = OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet";
+        var roots = new List<string?> { Environment.GetEnvironmentVariable("DOTNET_ROOT") };
+        if (OperatingSystem.IsWindows())
+        {
+            roots.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "dotnet"));
+            roots.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "dotnet"));
+        }
+        else
+        {
+            roots.AddRange(["/usr/share/dotnet", "/usr/lib/dotnet", "/usr/local/share/dotnet", "/opt/homebrew/opt/dotnet/libexec"]);
+        }
+        foreach (var root in roots)
+        {
+            if (string.IsNullOrEmpty(root)) continue;
+            var candidate = Path.Combine(root, exe);
+            if (File.Exists(candidate)) return candidate;
+        }
+        throw new FileNotFoundException("The .NET runtime host was not found in its install location. Set DOTNET_ROOT to the folder that holds it.");
+    }
+
     public async Task<DongleFrame> ExchangeAsync(DongleFrame frame,
         CancellationToken cancellationToken = default)
     {
@@ -31,7 +57,7 @@ internal sealed class LocalDongleProcessTransport : IDongleTransport
         if (!File.Exists(receiverAssembly) || !File.Exists(runtimeConfig) || !File.Exists(receiverDeps))
             throw new FileNotFoundException("The paired receiver runtime is not installed beside the emulator.");
 
-        var start = new ProcessStartInfo("dotnet")
+        var start = new ProcessStartInfo(DotnetHost())
         {
             WorkingDirectory = baseDirectory,
             UseShellExecute = false,

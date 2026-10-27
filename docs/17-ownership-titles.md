@@ -157,6 +157,21 @@ created_at)`. Never store the token in clear; the commitment is one-way.
 | Forged badge | only the registry can issue; client verifies `issuer_sig` (not implemented yet) |
 | Phishing owner area | the area is only reachable through the pinned secupgrade.com identity |
 
+## 9.1 As shipped: claims bought at the BTC shop (2026-10)
+
+The paid-claim flow that exists today is described in `docs/23-certificate-authority.md`: the shop signs an ownership
+certificate (`.kcert`), the Kickl CA countersigns and logs it, and the browser shows VERIFIED OWNER. Two points that
+change the threat table above:
+
+- **A `.kcert` alone can be a bearer credential.** If the buyer sets an **owner passphrase** on the shop page, the shop
+  signs an HMAC of it into the certificate and the CA seals it, so the file alone cannot edit the name (owner binding,
+  `docs/23`). Without a passphrase, whoever holds the file owns the name until the claim expires.
+- **Browser copies of the certificate are passphrase-sealed** (Argon2id + AES-256-GCM, bound to the site name), and the
+  profile keeps its own copy encrypted.
+
+The registry-side "token verification" table rows above describe the earlier local slice; the shipped claim path uses
+the shop signature + CA seal instead.
+
 ## 10. Slice status
 
 Implemented and tested:

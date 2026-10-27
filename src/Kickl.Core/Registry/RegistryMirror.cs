@@ -100,8 +100,12 @@ public sealed class RegistrySnapshot
 
     public static RegistrySnapshot Parse(ReadOnlySpan<byte> payload)
     {
+        if (payload.Length > 32 * 1024 * 1024) throw new FormatException("The registry snapshot is larger than any phonebook may be.");
         var snapshot = JsonSerializer.Deserialize<RegistrySnapshot>(payload, Json)
                        ?? throw new FormatException("The registry snapshot is empty.");
+        if (snapshot.Records.Count > 200_000) throw new FormatException("The registry snapshot has more records than any phonebook may.");
+        if (snapshot.Records.Any(r => r.Name is null || r.Name.Length > 253))
+            throw new FormatException("The registry snapshot has a malformed name.");
         if (snapshot.Version < 0)
             throw new FormatException("The registry snapshot is malformed.");
         return snapshot;

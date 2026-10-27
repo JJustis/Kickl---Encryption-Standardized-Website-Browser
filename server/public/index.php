@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Kickl\Registry\CaGateway;
+use Kickl\Registry\RateLimit;
 use Kickl\Registry\Config;
 use Kickl\Registry\Db;
 use Kickl\Registry\MailConflictException;
@@ -31,11 +32,14 @@ require $appRoot . '/src/Signer.php';
 require $appRoot . '/src/RegistryStore.php';
 require $appRoot . '/src/MailIdentityStore.php';
 require $appRoot . '/src/CaGateway.php';
+require $appRoot . '/src/RateLimit.php';
 
 $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
 $path = Config::requestPath();
 
 try {
+    // Everything is limited per client; the heavy reads and the unauthenticated writes much more tightly.
+    RateLimit::enforce('all', 600, 60);
     switch (true) {
         case $method === 'GET' && $path === '/':
             respond(200, [
@@ -70,6 +74,7 @@ try {
             ]);
 
         case $method === 'GET' && $path === '/v1/registry/snapshot':
+            RateLimit::enforce('snapshot', 20, 60);
             $snapshot = RegistryStore::snapshot(Db::connect());
             if ($snapshot === null) {
                 respond(404, ['error' => 'No snapshot has been published yet.']);
@@ -81,6 +86,7 @@ try {
             if ($from === false || $from === null || $from < 0) {
                 respond(400, ['error' => 'from must be a non-negative integer.']);
             }
+            RateLimit::enforce('delta', 60, 60);
             $delta = RegistryStore::delta(Db::connect(), (int) $from);
             if ($delta === null) {
                 respond(404, ['error' => 'No delta from that version.']);
@@ -103,12 +109,14 @@ try {
             respond(405, ['error' => 'Use POST.']);
 
         case $method === 'POST' && $path === '/v1/mail/identity':
+            RateLimit::enforce('mail-register', 10, 3600);
             respond(201, MailIdentityStore::register(Db::connect(), readJsonBody()));
 
         case $path === '/v1/mail/identity':
             respond(405, ['error' => 'Use POST.']);
 
         case $method === 'GET' && $path === '/v1/mail/lookup':
+            RateLimit::enforce('mail-lookup', 120, 600);
             $short = trim((string) ($_GET['short'] ?? ''));
             $identity = MailIdentityStore::lookup(Db::connect(), $short);
             if ($identity === null) {

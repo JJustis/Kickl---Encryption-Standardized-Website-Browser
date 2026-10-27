@@ -129,12 +129,30 @@ public class CaTests
     }
 
     [Fact]
-    public void IssuerCertificatesExpireAndAreNotValidBeforeTheirDate()
+    public void ASealStaysValidAfterItsIssuingKeyExpires_ButTheCaCannotSealWithAnExpiredKey()
     {
         using var f = new CaFixture();
         var seal = f.Seal("owned.com");
-        Assert.False(CaTrust.VerifySeal(f.RootPublic, seal, "owned.com", f.Now.AddDays(91)).Verified);
+
+        // 91 days on, the issuing certificate has expired. What it honestly sealed while valid still verifies.
+        Assert.True(CaTrust.VerifySeal(f.RootPublic, seal, "owned.com", f.Now.AddDays(91)).Verified);
+
+        // but the CA itself will not seal anything with an expired key
+        var late = Assert.Throws<CaRejectedException>(() => f.Ca.Countersign(f.Shop.Sign("new.com", order: 9), f.Now.AddDays(91)));
+        Assert.Equal("issuer-invalid", late.Code);
+
+        // a verifier whose clock is before the seal sees a seal from the future
         Assert.False(CaTrust.VerifySeal(f.RootPublic, seal, "owned.com", f.Now.AddDays(-1)).Verified);
+    }
+
+    [Fact]
+    public void ASealIssuedOutsideItsIssuingKeysDatesIsRejected()
+    {
+        using var f = new CaFixture();
+        var seal = f.Seal("owned.com");
+        // claim it was issued before the key existed: the issuer's signature breaks, and the window check would too
+        seal.IssuedAt = f.Now.AddDays(-30).ToUnixTimeSeconds();
+        Assert.False(CaTrust.VerifySeal(f.RootPublic, seal, "owned.com", f.Now).Verified);
     }
 
     [Fact]

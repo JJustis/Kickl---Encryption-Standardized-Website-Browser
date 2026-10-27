@@ -39,9 +39,9 @@ final class MailIdentityStore
         }
         $endpoint = rtrim(trim((string) ($bundle['endpoint'] ?? '')), '/');
         $url = filter_var($endpoint, FILTER_VALIDATE_URL);
-        if ($url === false || !preg_match('#^https?://#i', $endpoint) || strlen($endpoint) > 255
-            || !preg_match('/:\d{1,5}$/', $endpoint)) {
-            throw new ValidationException('bundle.endpoint must be an http(s) URL with a port.');
+        if ($url === false || strlen($endpoint) > 255
+            || !preg_match('/^https:\/\/[^\/#?\s]+:\d{1,5}#pin=[A-Za-z0-9_-]{43}$/', $endpoint)) {
+            throw new ValidationException('bundle.endpoint must be an https URL with a port and a #pin= TLS key pin.');
         }
         $rsa = (string) ($bundle['rsaPublicKey'] ?? '');
         $mldsa = (string) ($bundle['mlDsaPublicKey'] ?? '');

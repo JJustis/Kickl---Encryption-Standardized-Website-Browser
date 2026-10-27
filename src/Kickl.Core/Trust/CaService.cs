@@ -134,8 +134,20 @@ public sealed class CaService
             }
         }
 
+        // A binding the shop signed into the receipt is the owner's; whatever a sealer adds on top is ignored. Only a receipt the shop
+        // did not bind can be bound by the person sealing it.
+        string salt, binding, kdf;
+        if (receipt.IsShopBound) (salt, binding, kdf) = (receipt.BoundSalt!, receipt.BoundBinding!, receipt.BoundKdf!);
+        else (salt, binding, kdf) = (receipt.OwnerSalt ?? "", receipt.OwnerBinding ?? "", receipt.OwnerKdf ?? "");
+        var bound = binding.Length > 0 || salt.Length > 0;
+        if (bound && !OwnerBinding.IsWellFormed(salt, binding, kdf))
+            throw new CaRejectedException("bad-receipt", "The owner binding is malformed.");
+
         var seal = new CaSeal
         {
+            OwnerSalt = bound ? salt : "",
+            OwnerBinding = bound ? binding : "",
+            OwnerKdf = bound ? kdf : "",
             Issuer = _issuer,
             Site = receipt.Site,
             Seq = receipt.Seq,
@@ -176,13 +188,16 @@ public sealed class CaService
     }
 
     /// <summary>Re-derive every seal's inclusion in the current log. Returns problems found; empty means the log is sound.</summary>
-    public IReadOnlyList<string> Audit()
+    public IReadOnlyList<string> Audit() => AuditEntries(_store.Entries);
+
+    /// <summary>The audit needs only the ledger, so it still works when the issuing key is gone or broken.</summary>
+    public static IReadOnlyList<string> AuditEntries(IReadOnlyList<LedgerEntry> entries)
     {
         var problems = new List<string>();
-        var leaves = _store.Entries.Select(e => CaSeal.LeafHash(e.LeafText)).ToList();
-        for (var i = 0; i < _store.Entries.Count; i++)
+        var leaves = entries.Select(e => CaSeal.LeafHash(e.LeafText)).ToList();
+        for (var i = 0; i < entries.Count; i++)
         {
-            var e = _store.Entries[i];
+            var e = entries[i];
             if (e.Seal.LogIndex != i) problems.Add($"entry {i}: seal says position {e.Seal.LogIndex}");
             if (CaSeal.LeafHash(e.Seal.LeafText()).AsSpan().SequenceEqual(leaves[i]) is false)
                 problems.Add($"entry {i}: leaf does not match its seal");

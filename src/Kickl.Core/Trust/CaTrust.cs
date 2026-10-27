@@ -19,8 +19,10 @@ public static class CaTrust
     private static HybridVerifier Verifier(RegistrySigningKey key) => new(key);
 
     /// <summary>The issuer certificate is signed by the root, inside its dates, and not revoked.</summary>
+    /// <param name="validAt">When the issuing key must have been valid. Signing uses now; checking an existing seal uses
+    /// the moment it was issued, so renewing the issuing key never invalidates what the old key honestly sealed.</param>
     public static SealCheck VerifyIssuer(RegistrySigningKey root, IssuerCertificate issuer, DateTimeOffset now,
-        RevocationList? revocations)
+        RevocationList? revocations, DateTimeOffset? validAt = null)
     {
         try
         {
@@ -34,9 +36,9 @@ public static class CaTrust
             return SealCheck.No("the issuer certificate is malformed");
         }
 
-        var t = now.ToUnixTimeSeconds();
-        if (t < issuer.NotBefore) return SealCheck.No("the issuer certificate is not valid yet");
-        if (t > issuer.NotAfter) return SealCheck.No("the issuer certificate has expired");
+        var t = (validAt ?? now).ToUnixTimeSeconds();
+        if (t < issuer.NotBefore) return SealCheck.No(validAt is null ? "the issuer certificate is not valid yet" : "the seal predates its issuing key");
+        if (t > issuer.NotAfter) return SealCheck.No(validAt is null ? "the issuer certificate has expired" : "the seal was issued after its issuing key expired");
         if (revocations is not null && revocations.Revokes(issuer.Serial))
             return SealCheck.No("the CA revoked this issuing key");
         return SealCheck.Ok;
@@ -77,7 +79,10 @@ public static class CaTrust
         if (expectedSeq is { } seq && seal.Seq != seq)
             return SealCheck.No("this seal is for an earlier claim of the name");
 
-        var issuer = VerifyIssuer(root, seal.Issuer, now, revocations);
+        // A seal is valid if its issuing key was valid WHEN IT SEALED. Renewing the key later does not retire old seals;
+        // revoking the key (root-signed) does.
+        if (seal.IssuedAt > now.ToUnixTimeSeconds() + 300) return SealCheck.No("this seal claims to be from the future");
+        var issuer = VerifyIssuer(root, seal.Issuer, now, revocations, DateTimeOffset.FromUnixTimeSeconds(seal.IssuedAt));
         if (!issuer.Verified) return issuer;
 
         if (seal.ReceiptExpires <= now.ToUnixTimeSeconds()) return SealCheck.No("the ownership has expired");

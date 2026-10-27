@@ -1,3 +1,4 @@
+using Kickl.Core.Util;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -20,7 +21,8 @@ public sealed record FreeChatMessage(
     int MsgIndex,
     byte[] Png,
     string CreatedAt,
-    bool? ServerAuthentic);
+    bool? ServerAuthentic,
+    SenderTrust Trust = SenderTrust.Unsigned);
 
 /// <summary>
 /// Native client for the existing Pinwheel FreeChat service. It speaks the same PHP/ML-KEM
@@ -33,6 +35,8 @@ public sealed class FreeChatClient : IDisposable
     public const string DefaultApiBase = "https://secupgrade.com/pinwheel-freechat/chat/api/";
     public const int EpochSeconds = 20;
     private const int MlKemSharedSecretSize = 32;
+    private const int MaxMembers = 64;
+    private const int MaxMessagesPerPoll = 500;
 
     private readonly HttpClient _http;
     private readonly Uri _api;
@@ -55,13 +59,99 @@ public sealed class FreeChatClient : IDisposable
             UseCookies = true,
             CookieContainer = new CookieContainer()
         };
-        _http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(20) };
+        _http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(20) }.Limit(HttpLimits.Chat);
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("KicklBrowser/0.1 FreeChat");
 
         var baseUri = new Uri(apiBase ?? DefaultApiBase, UriKind.Absolute);
+        // The PIN and the session cookie travel to this address, so it is https or nothing (loopback only in a debug build)
+        var loopbackOk = false;
+#if DEBUG
+        loopbackOk = baseUri.IsLoopback;
+#endif
+        if (baseUri.Scheme != Uri.UriSchemeHttps && !loopbackOk)
+            throw new FreeChatException("The chat server address must be https.");
         _api = baseUri.AbsoluteUri.EndsWith('/')
             ? baseUri
             : new Uri(baseUri.AbsoluteUri + "/");
+    }
+
+    // ---- key pinning (trust on first use). The server relays each member's public key, so a malicious server could swap one and
+    // be handed the room's group secret. The first key seen for a username is remembered; a different one later is never given
+    // the secret until the person accepts the change after comparing fingerprints.
+    private readonly Dictionary<string, string> _keyPins = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _keyAlerts = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>username → full SHA-256 (hex) of the ML-KEM key first seen for them.</summary>
+    public IReadOnlyDictionary<string, string> KeyPins => _keyPins;
+
+    /// <summary>Members whose key no longer matches the pinned one. They are not given the group secret.</summary>
+    public IReadOnlyCollection<string> KeyAlerts => _keyAlerts.Union(_signAlerts, StringComparer.OrdinalIgnoreCase).ToArray();
+
+    // ---- sender signatures (see ChatSignature). The signing key is this profile's; others' are pinned like room keys, under "sig:name".
+    private MLDsa? _signingKey;
+    private readonly HashSet<string> _signAlerts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _signSeen = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>This profile's message-signing key (ML-DSA-65 PKCS#8). Without one the client still works, but its messages are unsigned.</summary>
+    public void UseSigningKey(byte[] pkcs8)
+    {
+        _signingKey?.Dispose();
+        _signingKey = MLDsa.ImportPkcs8PrivateKey(pkcs8);
+    }
+
+    public static byte[] NewSigningKey()
+    {
+        using var key = MLDsa.GenerateKey(MLDsaAlgorithm.MLDsa65);
+        return key.ExportPkcs8PrivateKey();
+    }
+
+    /// <summary>Raised when a pin is added or accepted, so the caller can save <see cref="KeyPins"/>.</summary>
+    public event Action? PinsChanged;
+
+    public void LoadPins(IReadOnlyDictionary<string, string> pins)
+    {
+        foreach (var (name, hash) in pins)
+            if (name.Length is > 0 and <= 80 && hash.Length == 64) _keyPins[name] = hash;
+    }
+
+    /// <summary>The person compared fingerprints and accepts the member's new key.</summary>
+    public void AcceptKey(string username)
+    {
+        var member = _members.FirstOrDefault(m => string.Equals(m.Username, username, StringComparison.OrdinalIgnoreCase));
+        if (member is null) return;
+        var hash = FullHash(member);
+        if (hash.Length > 0) _keyPins[member.Username] = hash;
+        _keyAlerts.Remove(member.Username);
+        if (_signSeen.TryGetValue(member.Username, out var signing))
+            _keyPins["sig:" + member.Username] = signing;
+        _signAlerts.Remove(member.Username);
+        PinsChanged?.Invoke();
+    }
+
+    private static string FullHash(FreeChatMember member)
+    {
+        try { return Convert.ToHexString(SHA256.HashData(Convert.FromBase64String(member.PublicKeyBase64))).ToLowerInvariant(); }
+        catch (FormatException) { return ""; }
+    }
+
+    /// <summary>Pin a first-seen key; report whether this member's current key is the pinned one.</summary>
+    private bool CheckPin(FreeChatMember member)
+    {
+        var hash = FullHash(member);
+        if (hash.Length == 0) return false;
+        if (!_keyPins.TryGetValue(member.Username, out var pinned))
+        {
+            _keyPins[member.Username] = hash;
+            PinsChanged?.Invoke();
+            return true;
+        }
+        if (CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(pinned), Encoding.ASCII.GetBytes(hash)))
+        {
+            _keyAlerts.Remove(member.Username);
+            return true;
+        }
+        _keyAlerts.Add(member.Username);
+        return false;
     }
 
     public FreeChatUser? User { get; private set; }
@@ -125,6 +215,7 @@ public sealed class FreeChatClient : IDisposable
                 if (shared.Length != MlKemSharedSecretSize)
                     throw new FreeChatException("The ML-KEM shared secret has the wrong size.");
                 var wrapKey = Hkdf256(shared, "mlkem-wrap");
+                CryptographicOperations.ZeroMemory(shared);
                 try
                 {
                     _rootSecret = Aead.Open(wrapKey,
@@ -142,6 +233,19 @@ public sealed class FreeChatClient : IDisposable
             throw new FreeChatException("The room secret is malformed.");
 
         await DistributePendingAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// A short code naming one member's ML-KEM key, to compare out of band (read it aloud, check it in another app). The server
+    /// relays the keys the group secret is wrapped to, so only a person comparing these can tell a swapped key from the real one.
+    /// </summary>
+    public static string KeyFingerprint(FreeChatMember member)
+    {
+        byte[] key;
+        try { key = Convert.FromBase64String(member.PublicKeyBase64); }
+        catch (FormatException) { return "invalid"; }
+        var hash = Convert.ToHexString(SHA256.HashData(key)).ToLowerInvariant();
+        return string.Join(' ', Enumerable.Range(0, 6).Select(i => hash.Substring(i * 5, 5)));
     }
 
     /// <summary>Nobody in the room holds the group key, so no member can hand it over.</summary>
@@ -195,6 +299,7 @@ public sealed class FreeChatClient : IDisposable
         var recipients = _members
             .Where(m => !m.HasSecret && m.UserId != User.Id
                         && !string.IsNullOrWhiteSpace(m.PublicKeyBase64))
+            .Where(CheckPin)   // a key that differs from the one first seen for that name gets nothing until accepted
             .ToArray();
 
         // Each wrap is independent, and one round-trip per member in sequence is slow enough to
@@ -213,6 +318,7 @@ public sealed class FreeChatClient : IDisposable
                 Convert.FromBase64String(member.PublicKeyBase64));
             recipient.Encapsulate(out var kemCiphertext, out var sharedSecret);
             var wrapKey = Hkdf256(sharedSecret, "mlkem-wrap");
+            CryptographicOperations.ZeroMemory(sharedSecret);
             try
             {
                 var sealedSecret = Aead.Seal(wrapKey, _rootSecret!, []);
@@ -255,6 +361,9 @@ public sealed class FreeChatClient : IDisposable
         var messageKey = Hkdf256(epochKey, "msg-" + _localMsgIndex);
         try
         {
+            if (_signingKey is not null && User is not null && _kem is not null)
+                png = ChatSignature.Sign(_signingKey, png, SessionId, epoch, _localMsgIndex, User.Id, User.Username,
+                    ChatSignature.KemHash(_kem.ExportEncapsulationKey()));
             var sealedMessage = Aead.Seal(messageKey, png, []);
             var ciphertext = sealedMessage.Ciphertext[..^Aead.TagSize];
             var tag = sealedMessage.Ciphertext[^Aead.TagSize..];
@@ -303,7 +412,7 @@ public sealed class FreeChatClient : IDisposable
         }
 
         var decrypted = new List<FreeChatMessage>();
-        foreach (var message in messages.EnumerateArray())
+        foreach (var message in messages.EnumerateArray().Take(MaxMessagesPerPoll))
         {
             var id = ReadInt(message, "id") ?? 0;
             _lastMsgId = Math.Max(_lastMsgId, id);
@@ -331,15 +440,20 @@ public sealed class FreeChatClient : IDisposable
                     CryptographicOperations.ZeroMemory(messageKey);
                 }
 
+                var senderId = ReadInt(message, "sender_user_id") ?? 0;
+                var senderName = ReadString(message, "username") ?? "member";
+                var trust = Authenticate(ref plaintext, epoch, index, senderId, senderName);
+
                 decrypted.Add(new FreeChatMessage(
                     id,
-                    ReadInt(message, "sender_user_id") ?? 0,
-                    ReadString(message, "username") ?? "member",
+                    senderId,
+                    senderName,
                     epoch,
                     index,
                     plaintext,
                     ReadString(message, "created_at") ?? "",
-                    serverAuthentic));
+                    serverAuthentic,
+                    trust));
             }
             catch (Exception ex) when (ex is FormatException or CryptographicException
                                            or JsonException or ArgumentException)
@@ -350,6 +464,42 @@ public sealed class FreeChatClient : IDisposable
         }
 
         return decrypted;
+    }
+
+    /// <summary>Check a decrypted payload's signed trailer (if any) and strip it, leaving the plain picture.</summary>
+    private SenderTrust Authenticate(ref byte[] payload, int epoch, int index, int senderId, string username)
+    {
+        var parsed = ChatSignature.TryParse(payload);
+        if (parsed is null) return SenderTrust.Unsigned;
+        payload = parsed.Png;
+
+        if (!ChatSignature.Verify(parsed, SessionId, epoch, index, senderId, username)) return SenderTrust.Invalid;
+
+        // The room key this member signed for must be the one the server lists for them
+        var member = _members.FirstOrDefault(m => m.UserId == senderId);
+        if (member is not null && !string.IsNullOrWhiteSpace(member.PublicKeyBase64))
+        {
+            try
+            {
+                if (!CryptographicOperations.FixedTimeEquals(
+                        ChatSignature.KemHash(Convert.FromBase64String(member.PublicKeyBase64)), parsed.KemHash))
+                    return SenderTrust.Invalid;
+            }
+            catch (FormatException) { return SenderTrust.Invalid; }
+        }
+
+        var fingerprint = ChatSignature.Fingerprint(parsed.PublicKey);
+        var pinKey = "sig:" + username;
+        if (!_keyPins.TryGetValue(pinKey, out var pinned))
+        {
+            _keyPins[pinKey] = fingerprint;
+            PinsChanged?.Invoke();
+            return SenderTrust.FirstSeen;
+        }
+        if (string.Equals(pinned, fingerprint, StringComparison.Ordinal)) return SenderTrust.Verified;
+        _signSeen[username] = fingerprint;
+        _signAlerts.Add(username);
+        return SenderTrust.KeyChanged;
     }
 
     public async Task RetireSessionAsync(CancellationToken cancellationToken = default)
@@ -366,6 +516,7 @@ public sealed class FreeChatClient : IDisposable
         if (_disposed) return;
         _disposed = true;
         DisposeKem();
+        _signingKey?.Dispose();
         if (_rootSecret is not null) CryptographicOperations.ZeroMemory(_rootSecret);
         if (_rollSeed is not null) CryptographicOperations.ZeroMemory(_rollSeed);
         _rootSecret = null;
@@ -526,6 +677,7 @@ public sealed class FreeChatClient : IDisposable
         if (element.ValueKind != JsonValueKind.Array) return members;
         foreach (var member in element.EnumerateArray())
         {
+            if (members.Count >= MaxMembers) break;   // a hostile server cannot make us wrap the secret for thousands of "members"
             var id = ReadInt(member, "user_id") ?? 0;
             members.Add(new FreeChatMember(
                 id,

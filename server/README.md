@@ -108,8 +108,16 @@ is served through Apache and was verified end-to-end (health, register, snapshot
 | GET | `/v1/mail/lookup?short=NNNNNNNN` | none | return a mail public bundle |
 
 Mail is a directory here, not a mailbox. The API stores no mail messages; the sender posts the
-sealed PNG directly to the endpoint in the recipient's bundle (`/v1/mail/deliver`). The recipient
-keeps messages in its local SQLite vault.
+sealed PNG directly to the endpoint in the recipient's bundle (`/v1/mail/deliver`), over TLS 1.3 pinned to the
+recipient's own key. The recipient keeps messages in its local SQLite vault. Registration accepts only an endpoint of
+the form `https://host:port#pin=<43-character base64url key pin>`; plain-http or unpinned endpoints are refused.
+
+### Rate limits
+
+Every client (by `REMOTE_ADDR` only; forwarded-for headers are never trusted) gets a sliding window per bucket,
+implemented in `src/RateLimit.php` with counts in the system temp directory: 600 requests a minute overall,
+snapshot 20/min, delta 60/min, mail registration 10/hour, mail lookup 120 per 10 minutes. Over the limit the
+API answers `429` with `Retry-After`. The CA gateway has its own limit on seal requests.
 
 Registration is **operator-only** in this slice. It is not yet the signed owner request described
 in `docs/04` §3; there is no PoW, per-device quota, renewal, transfer, TXT proof check, or abuse
@@ -152,7 +160,7 @@ monotonicity, same-version equivocation, and the pinned signing-key fingerprint.
 - Deltas carry an empty `consistencyProof`. RFC 6962 consistency proofs exist in `MerkleLog` but the
   server does not yet generate/attach them, and the client does not require them for a delta it can
   recompute the root over.
-- No `ETag`/`If-None-Match`, compression, rate limits, request signing, or nonce replay cache.
+- No `ETag`/`If-None-Match`, compression, request signing, or nonce replay cache. (Per-client rate limits exist; see above.)
 - Registration is a shared admin token, not an owner signature; there is no on-chain or DNS proof.
 - No record deletion by design (a name is `closed`, not removed).
 - The signer is a separate process per publish. Fine for a small phonebook; batch later.

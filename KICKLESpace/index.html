@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>KICKL — the browser that can't watch you</title>
-<meta name="description" content="KICKL is a desktop browser for the jttp:// namespace: names resolve through an encrypted phonebook, pages arrive as sealed documents, and no page can run a script.">
+<meta name="description" content="KICKL is a desktop browser for the jttp:// namespace: names resolve through an encrypted phonebook, pages arrive as sealed documents, sites can be claimed with Bitcoin and verified by a certificate authority, and games run in a WebAssembly sandbox. No page runs JavaScript.">
 <meta name="theme-color" content="#05070d">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%2305070d'/%3E%3Cg fill='none' stroke='%233df5c8' stroke-width='5' stroke-linecap='round'%3E%3Cpath d='M32 32 32 8'/%3E%3Cpath d='M32 32 52 20'/%3E%3Cpath d='M32 32 52 44'/%3E%3Cpath d='M32 32 32 56'/%3E%3Cpath d='M32 32 12 44'/%3E%3Cpath d='M32 32 12 20'/%3E%3C/g%3E%3Ccircle cx='32' cy='32' r='5' fill='%238b6cff'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -43,8 +43,11 @@
     <nav class="nav__links" id="navLinks" aria-label="Sections">
       <a href="#features">Features</a>
       <a href="#security">Security</a>
-      <a href="#network">Network</a>
       <a href="#sealed">Sealed pages</a>
+      <a href="#claim">Claim a site</a>
+      <a href="#ca">CA</a>
+      <a href="#games">Games</a>
+      <a href="#audit">Audit</a>
       <a href="#server">Server</a>
       <a href="#download">Download</a>
       <a class="nav__ext" href="https://secupgrade.com" target="_blank" rel="noopener">secupgrade.com ↗</a>
@@ -66,7 +69,7 @@
   <section class="hero" id="top">
     <div class="hero__copy">
       <p class="eyebrow reveal">
-        <span class="pulse"></span> v0.1 · vertical slice · 171 tests green
+        <span class="pulse"></span> v0.2 · vertical slice · 389 tests green
       </p>
       <h1 class="hero__title reveal">
         Browse a web that<br>
@@ -74,8 +77,9 @@
       </h1>
       <p class="hero__lede reveal">
         KICKL is a desktop browser for its own namespace. Names resolve through an encrypted
-        phonebook, pages arrive as sealed documents, and not one byte of page script is allowed
-        on the surface — because the format has no instruction for it.
+        phonebook, pages arrive as sealed documents, and no JavaScript is allowed on the surface —
+        the format has no element for it. Claim a name with Bitcoin, have a certificate authority
+        verify it, and play games that run in a sandbox with nothing to reach.
       </p>
 
       <div class="hero__actions reveal">
@@ -83,7 +87,7 @@
           <svg viewBox="0 0 24 24" aria-hidden="true" class="btn__icon"><path d="M12 3v11m0 0 4.2-4.2M12 14 7.8 9.8M4 17.5v1.2A2.3 2.3 0 0 0 6.3 21h11.4a2.3 2.3 0 0 0 2.3-2.3v-1.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <span>
             <strong>Download for Windows</strong>
-            <small>49.7 MB · self-contained .exe</small>
+            <small>57.5 MB · self-contained .exe</small>
           </span>
         </a>
         <a class="btn btn--outline btn--xl" href="download/kickl-browser-source.zip" download>
@@ -136,7 +140,7 @@
   <section class="shell section" id="features">
     <header class="section__head reveal">
       <p class="eyebrow">What it does</p>
-      <h2>Six ideas, one sealed spine.</h2>
+      <h2>Eight ideas, one sealed spine.</h2>
       <p class="section__lede">
         Every surface in the app is built on the same primitives: a name, a sealed package,
         and a key that never leaves memory. That is why the parts fit together.
@@ -167,7 +171,7 @@
           <svg viewBox="0 0 24 24"><rect x="3.5" y="6" width="17" height="12.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m4.6 7.4 7.4 6 7.4-6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
         </span>
         <h3>KicklMail</h3>
-        <p>Letters travel to a short id, sealed end to end. The vault unlocks with a separate mail key and re-locks on a timer.</p>
+        <p>Letters travel to a short id, sealed end to end, and cross the wire over TLS 1.3 pinned to the recipient&rsquo;s own signed key. The vault unlocks with a separate mail key and re-locks on a timer.</p>
         <p class="card__tag">sealed letters</p>
       </article>
 
@@ -176,7 +180,7 @@
           <svg viewBox="0 0 24 24"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h8A2.5 2.5 0 0 1 17 6.5v7a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4A2 2 0 0 1 4 14Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M7.5 8.5h6M7.5 11.5h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
         </span>
         <h3>FreeChat</h3>
-        <p>A group secret wrapped in ML-KEM-1024, per-epoch keys, messages sent as PNGs. The relay carries ciphertext it cannot read.</p>
+        <p>A group secret wrapped in ML-KEM-1024, per-epoch keys, messages sent as PNGs. The relay carries ciphertext it cannot read, every message is signed, and your browser pins each member&rsquo;s keys and warns when one changes.</p>
         <p class="card__tag">post-quantum room</p>
       </article>
 
@@ -194,17 +198,35 @@
           <svg viewBox="0 0 24 24"><path d="M8 4v5.5a4 4 0 1 0 8 0V4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="12" cy="16.5" r="3.8" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="16.5" r="1.1" fill="currentColor"/></svg>
         </span>
         <h3>Arcade &amp; ownership</h3>
-        <p>Tic-tac-toe and Memory play natively, offline. Titles are claimed with an RSA-3072 dongle challenge, not a password reset.</p>
+        <p>Tic-tac-toe and Memory play natively, offline. Bigger games run as sandboxed WebAssembly, and a name you buy is yours by certificate, not by password reset.</p>
         <p class="card__tag">playable today</p>
+      </article>
+
+      <article class="card reveal" style="--accent:#3df5c8">
+        <span class="card__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M12 3.2 19.5 6v5.6c0 4.4-3 7.6-7.5 9.2-4.5-1.6-7.5-4.8-7.5-9.2V6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m8.6 12 2.6 2.6 4.4-5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <h3>Claim &amp; verify</h3>
+        <p>Every name is free until you buy it at the BTC shop. A certificate authority countersigns your certificate and visitors see a verified-owner badge.</p>
+        <p class="card__tag">paid in Bitcoin · sealed by the CA</p>
+      </article>
+
+      <article class="card reveal" style="--accent:#8b6cff">
+        <span class="card__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 12v9M12 12 4 7.5M12 12l8-4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+        </span>
+        <h3>Games in a cage</h3>
+        <p>Games are WebAssembly modules that import nothing, run on a fuel budget and a memory cap, and start only when you press play.</p>
+        <p class="card__tag">no network · no files · no clock</p>
       </article>
     </div>
   </section>
 
   <section class="stats">
     <div class="shell stats__grid">
-      <div class="stat reveal"><strong data-count="0">0</strong><span>page scripts allowed</span></div>
+      <div class="stat reveal"><strong data-count="0">0</strong><span>JavaScript on any page</span></div>
       <div class="stat reveal"><strong data-count="256">0</strong><span>bits of AES-GCM, everywhere</span></div>
-      <div class="stat reveal"><strong data-count="171">0</strong><span>tests green in the suite</span></div>
+      <div class="stat reveal"><strong data-count="389">0</strong><span>tests green in the suite</span></div>
       <div class="stat reveal"><strong data-count="1">0</strong><span>.exe to run, no install</span></div>
     </div>
   </section>
@@ -320,9 +342,10 @@
         <h2 class="reveal">Home is <span class="grad-text">secupgrade.com</span></h2>
         <p class="section__lede reveal">
           One host runs the whole spine: the signed phonebook the browser resolves names
-          against, the FreeChat room your messages pass through, and the publisher console
-          that mints ad placements. The server stores ciphertext for mail and chat; only the
-          phonebook and public story metadata are readable.
+          against, the FreeChat room your messages pass through, the publisher console
+          that mints ad placements, the BTC shop where names are claimed, and the certificate
+          authority that seals them. The server stores ciphertext for mail and chat; only the
+          phonebook, public story metadata and the CA's public log are readable.
         </p>
         <div class="server__actions reveal">
           <a class="btn btn--solid btn--xl" href="https://secupgrade.com" target="_blank" rel="noopener">
@@ -344,6 +367,8 @@
           <li>signed phonebook</li>
           <li>ciphertext-only relay</li>
           <li>ad console</li>
+          <li>BTC shop</li>
+          <li>certificate authority</li>
         </ul>
       </div>
 
@@ -369,6 +394,14 @@
           <span><code>/adnetworking/publisher</code><small>Nickles console · site-bound placements</small></span>
           <b aria-hidden="true">↗</b>
         </a>
+        <a class="server__row" href="https://secupgrade.com/btcshop/" target="_blank" rel="noopener">
+          <span><code>/btcshop</code><small>Claim a name · ownership certificates</small></span>
+          <b aria-hidden="true">↗</b>
+        </a>
+        <a class="server__row" href="https://secupgrade.com/secca/" target="_blank" rel="noopener">
+          <span><code>/secca</code><small>Certificate authority · public transparency log</small></span>
+          <b aria-hidden="true">↗</b>
+        </a>
         <p class="server__foot">
           The browser pins the registry key and verifies every snapshot twice — Ed25519 and
           ML-DSA-65 over the same bytes.
@@ -384,7 +417,8 @@
       <p class="section__lede">
         The renderer speaks one small markup language and nothing else. That is the whole
         security model of the surface — there is no capability to disable, because there is no
-        capability to call.
+        capability to call. A page's text and public files are encrypted on disk but open for any
+        reader by design; parts the author marks <em>protected</em> stay locked until the reader has the key.
       </p>
     </header>
 
@@ -397,18 +431,310 @@
           <li>Inline SVG art drawn from the document itself</li>
           <li>Native ad slots minted for that one placement</li>
           <li>Names resolved and hashes verified before parsing</li>
+          <li>Sandboxed WebAssembly games, only after you press play</li>
+          <li>A verified-owner badge, if its owner had the CA seal it</li>
         </ul>
       </div>
       <div class="compare__col compare__col--no reveal">
         <h3><span aria-hidden="true">✕</span> A KICKL page cannot</h3>
         <ul>
           <li>Run JavaScript — the element does not exist</li>
+          <li>Reach the network or your files from a game</li>
           <li>Read your clipboard, files or device</li>
           <li>Load a third-party script or font</li>
           <li>Phone home an impression or a pixel</li>
           <li>Change after the registry hash was signed</li>
         </ul>
       </div>
+    </div>
+  </section>
+
+  <section class="shell section under claim" id="claim">
+    <div class="under__copy">
+      <p class="eyebrow reveal">Claim a site</p>
+      <h2 class="reveal">Every name is free until someone owns it.</h2>
+      <p class="section__lede reveal">
+        Anyone can create and edit a <code>jttp://</code> page on a name nobody owns, for free.
+        When you want a name to be yours alone, you buy it with Bitcoin. The shop gives you an
+        <strong>ownership certificate</strong> — a small file — and from then on only a holder of
+        that file can publish to the name.
+      </p>
+
+      <ol class="steps">
+        <li class="reveal">
+          <span class="steps__num">01</span>
+          <div>
+            <h3>Press CLAIM SITE</h3>
+            <p>On any page, the button opens the BTC shop with the name already filled in. Nothing is bought until you pay.</p>
+          </div>
+        </li>
+        <li class="reveal">
+          <span class="steps__num">02</span>
+          <div>
+            <h3>Pay at the BTC shop</h3>
+            <p>Send the exact amount shown. When the payment confirms, download your certificate, a <code>.kcert</code> file.</p>
+          </div>
+        </li>
+        <li class="reveal">
+          <span class="steps__num">03</span>
+          <div>
+            <h3>Import it, and it is sealed</h3>
+            <p>Choose the file in the browser. It is checked, kept encrypted in your profile, and sent to the CA to be sealed. Better still, set an owner passphrase on the shop page when you order: the shop signs a hash of it into your certificate, so the file alone can no longer edit your name.</p>
+          </div>
+        </li>
+        <li class="reveal">
+          <span class="steps__num">04</span>
+          <div>
+            <h3>Edit with the certificate</h3>
+            <p>Open <code>jttp://yourname/edit</code>. The page asks for the file and your passphrase; without both nobody else can change your site, and the copies you save are passphrase-locked too.</p>
+          </div>
+        </li>
+      </ol>
+    </div>
+
+    <div class="server__panel reveal">
+      <div class="server__head">
+        <span class="dots"><i></i><i></i><i></i></span>
+        <code>claim a name</code>
+        <span class="server__live"><i></i> BTC</span>
+      </div>
+      <a class="server__row" href="https://secupgrade.com/btcshop/" target="_blank" rel="noopener">
+        <span><code>/btcshop</code><small>Buy a name · download your ownership certificate</small></span>
+        <b aria-hidden="true">↗</b>
+      </a>
+      <a class="server__row" href="https://secupgrade.com/secca/" target="_blank" rel="noopener">
+        <span><code>/secca</code><small>Have the CA seal it · look up any site · read the log</small></span>
+        <b aria-hidden="true">↗</b>
+      </a>
+      <p class="server__foot">
+        The certificate is a key: whoever holds the file owns the name until the claim expires,
+        so keep it safe. A name lasts twelve months; claiming it again retires the old certificate.
+      </p>
+    </div>
+  </section>
+
+  <section class="shell section ca" id="ca">
+    <header class="section__head reveal">
+      <p class="eyebrow">The Kickl CA</p>
+      <h2>Someone is watching the certificates.</h2>
+      <p class="section__lede">
+        A certificate authority checks that each ownership certificate is genuine, that no one holds
+        a clashing claim, and writes everything it signs into a public, append-only log. A site whose
+        certificate the CA has sealed shows <strong>✓ VERIFIED OWNER</strong> to every visitor, not just
+        to its owner. Nothing is done by hand: every certificate gets the same checks, automatically.
+      </p>
+    </header>
+
+    <div class="compare">
+      <div class="compare__col compare__col--yes reveal">
+        <h3><span aria-hidden="true">✓</span> The CA checks</h3>
+        <ul>
+          <li>The shop's signature on the certificate is genuine</li>
+          <li>The certificate has not expired or been revoked</li>
+          <li>No newer or clashing claim exists for that name</li>
+          <li>Every seal is written to a public transparency log</li>
+        </ul>
+      </div>
+      <div class="compare__col compare__col--no reveal">
+        <h3><span aria-hidden="true">✕</span> The CA refuses</h3>
+        <ul>
+          <li>Certificates from a shop it does not trust</li>
+          <li>A second, different claim on the same name and number, and it logs the attempt</li>
+          <li>Old certificates after a name is claimed again</li>
+          <li>Anything its root has revoked</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="ca__chain">
+      <ol class="steps">
+        <li class="reveal">
+          <span class="steps__num">01</span>
+          <div>
+            <h3>An offline root</h3>
+            <p>Signs only the issuing key. Its public half is built into the browser, so a browser trusts nothing it was merely shown.</p>
+          </div>
+        </li>
+        <li class="reveal">
+          <span class="steps__num">02</span>
+          <div>
+            <h3>A short-lived issuing key</h3>
+            <p>Signs the seals and is renewed every 90 days. A leaked key stops being useful on its own; the root can also revoke it.</p>
+          </div>
+        </li>
+        <li class="reveal">
+          <span class="steps__num">03</span>
+          <div>
+            <h3>Hybrid signatures, a public log</h3>
+            <p>Every signature needs both Ed25519 and ML-DSA-65 to verify. Each seal carries a proof that it is in the log, which anyone can audit.</p>
+          </div>
+        </li>
+      </ol>
+
+      <div class="server__panel reveal">
+        <div class="server__head">
+          <span class="dots"><i></i><i></i><i></i></span>
+          <code>secupgrade.com/secca</code>
+          <span class="server__live"><i></i> LIVE</span>
+        </div>
+        <a class="server__row" href="https://secupgrade.com/secca/" target="_blank" rel="noopener">
+          <span><code>seal a certificate</code><small>Drop your .kcert file; download it back, sealed</small></span>
+          <b aria-hidden="true">↗</b>
+        </a>
+        <a class="server__row" href="https://secupgrade.com/secca/" target="_blank" rel="noopener">
+          <span><code>check a site</code><small>Is this name sealed, expired or revoked?</small></span>
+          <b aria-hidden="true">↗</b>
+        </a>
+        <a class="server__row" href="https://secupgrade.com/secca/" target="_blank" rel="noopener">
+          <span><code>the public log</code><small>Everything the CA has ever sealed</small></span>
+          <b aria-hidden="true">↗</b>
+        </a>
+        <p class="server__foot">
+          A seal shows the CA saw and logged a genuine certificate. It does not say who the buyer is.
+          The CA ships with a maintenance script that checks it daily and renews its issuing key before it
+          expires; a failed audit or a changed shop key is flagged to a person, never quietly fixed.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="shell section under games" id="games">
+    <div class="under__copy">
+      <p class="eyebrow reveal">WebAssembly</p>
+      <h2 class="reveal">Games, run in a cage.</h2>
+      <p class="section__lede reveal">
+        KICKL pages still have no JavaScript. Games and interactive pieces use
+        <strong>WebAssembly</strong> instead: a compact, compiled format you can build from Rust, C,
+        Zig, AssemblyScript or Go. A game is sealed into the page like any other file, and it runs in a
+        sandbox that gives it nothing to reach with.
+      </p>
+
+      <ol class="steps">
+        <li class="reveal">
+          <span class="steps__num">01</span>
+          <div>
+            <h3>It imports nothing</h3>
+            <p>No network, files, clipboard, clock or host calls. A module that asks the browser for any of them is refused before it starts.</p>
+          </div>
+        </li>
+        <li class="reveal">
+          <span class="steps__num">02</span>
+          <div>
+            <h3>Fuel and a memory cap</h3>
+            <p>Every frame runs on a fixed instruction budget, so an endless loop stops the game, not your browser. Memory growth is capped too.</p>
+          </div>
+        </li>
+        <li class="reveal">
+          <span class="steps__num">03</span>
+          <div>
+            <h3>You press play</h3>
+            <p>Nothing runs on load. It stops when you leave the page, switch tab, lock the profile or close the window.</p>
+          </div>
+        </li>
+        <li class="reveal">
+          <span class="steps__num">04</span>
+          <div>
+            <h3>Saves stay yours</h3>
+            <p>A game can keep up to 4&nbsp;KB, such as a best score. It is stored encrypted in your own profile, never on the page.</p>
+          </div>
+        </li>
+      </ol>
+    </div>
+
+    <div class="games__side">
+      <div class="code-panel reveal" aria-label="A page that embeds a WebAssembly game">
+        <div class="code-panel__head">
+          <span class="dots"><i></i><i></i><i></i></span>
+          <span>game-lab.custom/site.kml</span>
+          <span class="code-panel__badge">WASM</span>
+        </div>
+        <pre><code><span class="c-tag">&lt;page&gt;</span>
+  <span class="c-tag">&lt;h1&gt;</span>Game lab<span class="c-tag">&lt;/h1&gt;</span>
+
+  <span class="c-comment">&lt;!-- a sealed .wasm blob.
+       nothing runs until you press play --&gt;</span>
+  <span class="c-tag">&lt;game</span> <span class="c-attr">id</span>=<span class="c-str">"catcher"</span> <span class="c-attr">label</span>=<span class="c-str">"Catcher"</span><span class="c-tag">/&gt;</span>
+<span class="c-tag">&lt;/page&gt;</span></code></pre>
+        <div class="code-panel__foot">
+          <span><i class="dot dot--green"></i> zero imports</span>
+          <span><i class="dot dot--violet"></i> fuel per frame</span>
+        </div>
+      </div>
+
+      <table class="limits reveal" aria-label="Game limits">
+        <thead><tr><th></th><th>Unclaimed name</th><th>Claimed name</th></tr></thead>
+        <tbody>
+          <tr><th>Module size</th><td>512 KiB</td><td>2 MiB</td></tr>
+          <tr><th>Memory</th><td>8 MiB</td><td>32 MiB</td></tr>
+          <tr><th>Per frame</th><td>10 M instructions</td><td>40 M instructions</td></tr>
+        </tbody>
+      </table>
+
+      <p class="games__note reveal">
+        Try it: open <code>jttp://game-lab.custom</code> in the browser and press <b>PLAY</b>. A game can
+        still draw anything on its picture, so treat its pixels like a page's, not like browser controls.
+        Build your own with the
+        <a href="https://github.com/JJustis/Kickl---Encryption-Standardized-Website-Browser/blob/main/docs/22-wasm-games.md" target="_blank" rel="noopener">author guide ↗</a>.
+      </p>
+    </div>
+  </section>
+
+  <section class="shell section under" id="audit">
+    <div class="under__copy">
+      <p class="eyebrow reveal">Checked in the open</p>
+      <h2 class="reveal">What we found, and what we have not fixed.</h2>
+      <p class="section__lede reveal">
+        The code has had a written security audit in three rounds, by its author, with every finding, fix and
+        open item published. It is not a substitute for an independent review, and it says so.
+      </p>
+
+      <ol class="steps">
+        <li class="reveal">
+          <span class="steps__num">01</span>
+          <div>
+            <h3>Mail is TLS 1.3, pinned</h3>
+            <p>Direct mail travels over TLS 1.3 to a key the recipient signed into their own address. No plain-http fallback, capped connections, hard timeouts.</p>
+          </div>
+        </li>
+        <li class="reveal">
+          <span class="steps__num">02</span>
+          <div>
+            <h3>Hostile input is fuzzed</h3>
+            <p>Pages, feeds, registry answers, certificates, mail bundles, pictures and WebAssembly modules are mutated thousands of times in the tests. Image and SVG bombs are capped.</p>
+          </div>
+        </li>
+        <li class="reveal">
+          <span class="steps__num">03</span>
+          <div>
+            <h3>One CA, keys under lock</h3>
+            <p>The browser trusts only secupgrade.com/secca. The CA and shop signing keys are wrapped with the operating system and never sit in the repository.</p>
+          </div>
+        </li>
+        <li class="reveal">
+          <span class="steps__num">04</span>
+          <div>
+            <h3>The gaps are listed</h3>
+            <p>FreeChat's server still decides who is in a room, a certificate bought without a passphrase is a bearer file, and secrets held in managed memory cannot be wiped.</p>
+          </div>
+        </li>
+      </ol>
+    </div>
+
+    <div class="games__side">
+      <table class="limits reveal" aria-label="Audit at a glance">
+        <thead><tr><th></th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><th>Tests in the suite</th><td>389</td></tr>
+          <tr><th>Known vulnerable packages</th><td>none</td></tr>
+          <tr><th>Independent pentest</th><td>not yet</td></tr>
+          <tr><th>Open items listed</th><td>yes, in the audit</td></tr>
+        </tbody>
+      </table>
+      <p class="games__note reveal">
+        Read the findings: <a href="https://github.com/JJustis/Kickl---Encryption-Standardized-Website-Browser/blob/main/docs/24-security-audit.md" target="_blank" rel="noopener">security audit ↗</a>,
+        <a href="https://github.com/JJustis/Kickl---Encryption-Standardized-Website-Browser/blob/main/docs/20-encryption-map.md" target="_blank" rel="noopener">encryption map ↗</a> and
+        <a href="https://github.com/JJustis/Kickl---Encryption-Standardized-Website-Browser/blob/main/docs/23-certificate-authority.md" target="_blank" rel="noopener">certificate authority ↗</a>.
+      </p>
     </div>
   </section>
 
@@ -422,6 +748,12 @@
           a name resolves, a sealed package verifies, a PIN unlocks, and a blob opens only
           inside an unlocked session.
         </p>
+        <p class="section__lede">
+          <strong>Rebuilt 2026-10-27</strong> from the current source: site claims and owner passphrases, the CA badge,
+          WebAssembly games, pinned-TLS mail and signed FreeChat are all in this .exe. Check the SHA-256 against the
+          value below, or
+          <a href="https://github.com/JJustis/Kickl---Encryption-Standardized-Website-Browser/blob/main/INSTALL.md" target="_blank" rel="noopener">build it yourself from source</a>.
+        </p>
       </header>
 
       <div class="download__grid">
@@ -434,13 +766,13 @@
             <span class="pill">self-contained</span>
           </div>
           <h3>KicklBrowser<span class="dl-card__ext">.exe</span></h3>
-          <p class="dl-card__meta">49.7 MB · no .NET install needed · Windows 10 / 11</p>
+          <p class="dl-card__meta">57.5 MB · no .NET install needed · Windows 10 / 11</p>
           <a class="btn btn--solid btn--block" href="download/KicklBrowser-windows-x64.exe" download>
             Download the browser
           </a>
           <div class="hash">
             <span class="hash__label">SHA-256</span>
-            <code id="hash-exe">f242725e576b06430f7653f602b9d5f8d4d9c5517ef5304a30270cb1a88640db</code>
+            <code id="hash-exe">23499416ea69afb7fd478d8d8dd48504b2c9d50267126b03b05f2f7242515e8c</code>
             <button class="hash__copy" type="button" data-copy="#hash-exe" aria-label="Copy the browser SHA-256">
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15 6.5V5.6A1.6 1.6 0 0 0 13.4 4H5.6A1.6 1.6 0 0 0 4 5.6v7.8A1.6 1.6 0 0 0 5.6 15h.9" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
             </button>
@@ -456,13 +788,13 @@
             <span class="pill pill--ghost">read it all</span>
           </div>
           <h3>kickl-browser<span class="dl-card__ext">-source.zip</span></h3>
-          <p class="dl-card__meta">0.6 MB · C# / .NET 10 / Avalonia · 158 files</p>
+          <p class="dl-card__meta">2.1 MB · C# / .NET 10 / Avalonia · 226 files</p>
           <a class="btn btn--outline btn--block" href="download/kickl-browser-source.zip" download>
             Download the source
           </a>
           <div class="hash">
             <span class="hash__label">SHA-256</span>
-            <code id="hash-src">6e919c88754ca747d3b9c63b9c9a5c5a1aaa58e212b259468a552b3712b2dc0b</code>
+            <code id="hash-src">63a42ee776a2c71b951c1e720d81040a6cf3193a829d2a17aac5d70dc5e224a6</code>
             <button class="hash__copy" type="button" data-copy="#hash-src" aria-label="Copy the source SHA-256">
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15 6.5V5.6A1.6 1.6 0 0 0 13.4 4H5.6A1.6 1.6 0 0 0 4 5.6v7.8A1.6 1.6 0 0 0 5.6 15h.9" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
             </button>
@@ -481,7 +813,7 @@
         </div>
         <div class="note">
           <h4>Build from source</h4>
-          <p>Unzip, then run <code>run.bat</code> — it builds Release and launches the browser. Or <code>dotnet build Kickl.slnx</code> if you want the CLI and tests too.</p>
+          <p>Needs the .NET 10 SDK. Clone or unzip, then run <code>run.bat</code> — it builds Release and launches the browser. Full steps, the registry server and the CA are in <a href="https://github.com/JJustis/Kickl---Encryption-Standardized-Website-Browser/blob/main/INSTALL.md" target="_blank" rel="noopener">INSTALL.md ↗</a>.</p>
         </div>
       </div>
 
@@ -513,9 +845,13 @@
     <nav class="footer__nav" aria-label="Footer">
       <a href="#features">Features</a>
       <a href="#security">Security</a>
-      <a href="#network">Network</a>
+      <a href="#claim">Claim a site</a>
+      <a href="#ca">CA</a>
+      <a href="#games">Games</a>
+      <a href="#audit">Audit</a>
       <a href="#download">Download</a>
       <a href="https://secupgrade.com" target="_blank" rel="noopener">secupgrade.com ↗</a>
+      <a href="https://github.com/JJustis/Kickl---Encryption-Standardized-Website-Browser" target="_blank" rel="noopener">GitHub ↗</a>
       <a href="download/kickl-browser-source.zip" download>Source</a>
     </nav>
 

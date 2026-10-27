@@ -16,7 +16,7 @@ internal sealed class FakeShop : IDisposable
     private readonly RSA _rsa = RSA.Create(2048);
     public string Spki => Convert.ToBase64String(_rsa.ExportSubjectPublicKeyInfo());
 
-    public OwnershipCert Sign(string site, int seq = 1, long order = 7, TimeSpan? lasts = null)
+    public OwnershipCert Sign(string site, int seq = 1, long order = 7, TimeSpan? lasts = null, string? ownerPassphrase = null)
     {
         var paid = DateTimeOffset.UtcNow.AddMinutes(-5).ToUnixTimeSeconds();
         var cert = new OwnershipCert
@@ -26,6 +26,8 @@ internal sealed class FakeShop : IDisposable
             Token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant(),
             Txid = "tx" + order
         };
+        if (ownerPassphrase is not null)
+            (cert.BoundKdf, cert.BoundSalt, cert.BoundBinding) = OwnerBinding.CreateForShop(ownerPassphrase, site);
         cert.Sig = Convert.ToBase64String(_rsa.SignData(Utf8.B(cert.Payload()),
             HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1));
         return cert;
@@ -113,8 +115,29 @@ public class ClaimTests
         var stored = File.ReadAllText(Path.Combine(temp.Path, "profiles", "guest", "private", "certs.kpf"));
         Assert.DoesNotContain(cert.Token, stored);
 
-        Assert.Equal(cert.Token, OwnershipCert.Parse(owner.ExportCert("mine.com")).Token);
-        Assert.Throws<ClaimException>(() => guest.ExportCert("unrelated.com"));
+        var copy = owner.ExportCert("mine.com", "a long passphrase");
+        Assert.True(SealedCert.IsSealed(copy));
+        Assert.DoesNotContain(cert.Token, System.Text.Encoding.UTF8.GetString(copy));
+        Assert.Equal(cert.Token, OwnershipCert.Parse(SealedCert.Open(copy, "a long passphrase")).Token);
+        Assert.Throws<ClaimException>(() => SealedCert.Open(copy, "wrong passphrase"));
+        Assert.Throws<ClaimException>(() => SealedCert.Open(copy, ""));
+        Assert.Throws<ClaimException>(() => owner.ExportCert("mine.com", "short"));
+        Assert.Throws<ClaimException>(() => guest.ExportCert("unrelated.com", "a long passphrase"));
+    }
+
+    [Fact]
+    public void SealedCopy_IsBoundToItsSite_AndDetectsTampering()
+    {
+        var cert = new OwnershipCert { Site = "a.com", Token = new string('a', 64), Sig = "x" };
+        var copy = SealedCert.Seal(cert, "a long passphrase");
+
+        var retargeted = System.Text.Encoding.UTF8.GetString(copy).Replace("\"site\": \"a.com\"", "\"site\": \"b.com\"");
+        Assert.Throws<ClaimException>(() => SealedCert.Open(System.Text.Encoding.UTF8.GetBytes(retargeted), "a long passphrase"));
+
+        var bad = copy.ToArray();
+        bad[^30] ^= 1;
+        Assert.Throws<ClaimException>(() => SealedCert.Open(bad, "a long passphrase"));
+        Assert.False(SealedCert.IsSealed(cert.ToBytes()));
     }
 
     [Fact]

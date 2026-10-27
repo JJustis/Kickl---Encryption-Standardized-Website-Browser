@@ -77,7 +77,7 @@ public sealed partial class BrowserWindow : Window
     private readonly string? _screenshotPath;
     private readonly bool _exitAfterScreenshot;
     private readonly bool _demoMode;
-    private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
+    private readonly HttpClient _http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) }.Limit(HttpLimits.Feed);
     private readonly IWebSurfaceEngine _sealedSurface = new AvaloniaSealedSurfaceEngine();
 
     private readonly List<BrowserTab> _tabs = [];
@@ -177,6 +177,29 @@ public sealed partial class BrowserWindow : Window
     private readonly StackPanel _chatMembers = new() { Spacing = 4 };
     private readonly StackPanel _chatBlockedList = new() { Spacing = 4 };
     private FreeChatClient? _chatClient;
+    private Dictionary<string, string> _chatKeyPins = [];
+    private byte[]? _chatSigningKey;
+
+    private byte[] LoadOrMakeChatSigningKey()
+    {
+        var made = FreeChatClient.NewSigningKey();
+        SaveChatPrefs(made);
+        return made;
+    }
+
+    /// <summary>A new chat client remembers the member keys this profile has already seen, and tells us when it learns one.</summary>
+    private FreeChatClient NewChatClient()
+    {
+        var client = NewChatClient();
+        client.LoadPins(_chatKeyPins);
+        client.UseSigningKey(_chatSigningKey ??= LoadOrMakeChatSigningKey());
+        client.PinsChanged += () =>
+        {
+            _chatKeyPins = client.KeyPins.ToDictionary(k => k.Key, k => k.Value, StringComparer.OrdinalIgnoreCase);
+            SaveChatPrefs();
+        };
+        return client;
+    }
     private DispatcherTimer? _chatTimer;
     private bool _chatBusy;
     private readonly HashSet<string> _chatBlocked = new(StringComparer.OrdinalIgnoreCase);
@@ -1220,7 +1243,7 @@ public sealed partial class BrowserWindow : Window
         _mailStatus.FontSize = 9;
         _mailStatus.Foreground = C(Muted);
         _mailStatus.TextWrapping = TextWrapping.Wrap;
-        StyleInput(_mailEndpointBox, "http://host:port");
+        StyleInput(_mailEndpointBox, "host:port (TLS key pin is added for you)");
         _mailEndpointBox.Height = 28;
         var publish = Btn("PUBLISH", MailSaveEndpoint);
         publish.Height = 28;
@@ -1861,7 +1884,7 @@ public sealed partial class BrowserWindow : Window
         try
         {
             var previous = _chatClient;
-            var client = new FreeChatClient();
+            var client = NewChatClient();
             try
             {
                 if (register) await client.RegisterAsync(username, pin);
@@ -1895,7 +1918,7 @@ public sealed partial class BrowserWindow : Window
         _chatError.Text = "Opening a guest session…";
         try
         {
-            var client = new FreeChatClient();
+            var client = NewChatClient();
             _chatClient?.Dispose();
             _chatClient = client;
             await client.GuestAsync();
@@ -1982,7 +2005,15 @@ public sealed partial class BrowserWindow : Window
         if (message.ServerAuthentic == false)
             who.Children.Add(T("ROLL TAG MISMATCH", 8.5, Amber, bold: true));
         else if (message.ServerAuthentic == true)
-            who.Children.Add(T("SIGNED ROLL", 8.5, Green, bold: true));
+            who.Children.Add(T("SERVER ROLL OK", 8.5, Muted));
+        switch (message.Trust)
+        {
+            case SenderTrust.Verified: who.Children.Add(T("✓ SIGNED", 8.5, Green, bold: true)); break;
+            case SenderTrust.FirstSeen: who.Children.Add(T("✓ SIGNED · NEW KEY", 8.5, Green, bold: true)); break;
+            case SenderTrust.KeyChanged: who.Children.Add(T("⚠ SIGNING KEY CHANGED", 8.5, Red, bold: true)); break;
+            case SenderTrust.Invalid: who.Children.Add(T("✖ FORGED OR WRONG SENDER", 8.5, Red, bold: true)); break;
+            default: who.Children.Add(T("unsigned", 8.5, Muted)); break;
+        }
         head.Children.Add(who);
         var stamp = T(message.CreatedAt, 8.5, Muted);
         Grid.SetColumn(stamp, 1);
@@ -2037,10 +2068,22 @@ public sealed partial class BrowserWindow : Window
             var name = new StackPanel { Spacing = 1 };
             name.Children.Add(T(member.Username + (member.UserId == me.Id ? " (you)" : ""),
                 9.5, Text, bold: member.UserId == me.Id));
-            name.Children.Add(T((member.HasSecret ? "key ✓" : "key pending") + " · #" + member.UserId,
-                8, member.HasSecret ? Green : Amber));
+            var changed = _chatClient.KeyAlerts.Contains(member.Username);
+            name.Children.Add(T(changed ? "KEY CHANGED · not given the room key" : (member.HasSecret ? "key ✓" : "key pending") + " · #" + member.UserId,
+                8, changed ? Red : member.HasSecret ? Green : Amber));
+            if (member.UserId != me.Id)
+                name.Children.Add(T(FreeChatClient.KeyFingerprint(member), 7, Muted, mono: true));
             row.Children.Add(name);
-            if (member.UserId != me.Id && !string.IsNullOrWhiteSpace(member.Username))
+            if (changed)
+            {
+                var accept = Btn("ACCEPT KEY", () => { _chatClient!.AcceptKey(member.Username); RefreshChatPeople(); });
+                accept.FontSize = 7.5;
+                accept.Padding = new Thickness(6, 1);
+                accept.Height = 20;
+                Grid.SetColumn(accept, 1);
+                row.Children.Add(accept);
+            }
+            else if (member.UserId != me.Id && !string.IsNullOrWhiteSpace(member.Username))
             {
                 var action = Btn(_chatBlocked.Contains(member.Username) ? "UNBLOCK" : "BLOCK",
                     () => ToggleChatBlock(member.Username));
@@ -2160,6 +2203,8 @@ public sealed partial class BrowserWindow : Window
                 _chatSavedPin = prefs.Pin;
                 _chatBlocked.Clear();
                 foreach (var name in prefs.Blocked ?? []) _chatBlocked.Add(name);
+                _chatKeyPins = prefs.KeyPins ?? [];
+                if (prefs.SigningKey is { Length: > 0 } sk) _chatSigningKey = Convert.FromBase64String(sk);
             }
             finally
             {
@@ -2172,8 +2217,9 @@ public sealed partial class BrowserWindow : Window
         }
     }
 
-    private void SaveChatPrefs()
+    private void SaveChatPrefs(byte[]? newSigningKey = null)
     {
+        if (newSigningKey is not null) _chatSigningKey = newSigningKey;
         try
         {
             if (!_session.IsUnlocked) return;
@@ -2183,7 +2229,9 @@ public sealed partial class BrowserWindow : Window
             {
                 Username = _chatSavedUser,
                 Pin = _chatSavedPin,
-                Blocked = _chatBlocked.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList()
+                Blocked = _chatBlocked.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList(),
+                KeyPins = _chatKeyPins,
+                SigningKey = _chatSigningKey is null ? null : Convert.ToBase64String(_chatSigningKey)
             };
             var json = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(prefs));
             var encrypted = _session.ProtectProfileData("freechat-prefs", json);
@@ -2210,6 +2258,8 @@ public sealed partial class BrowserWindow : Window
         public string? Username { get; set; }
         public string? Pin { get; set; }
         public List<string>? Blocked { get; set; }
+        public Dictionary<string, string>? KeyPins { get; set; }
+        public string? SigningKey { get; set; }
     }
 
     private void RefreshProfileGate()
@@ -2863,9 +2913,18 @@ public sealed partial class BrowserWindow : Window
 
     private void OpenExternal(string url)
     {
+        // The shell will open ANY protocol handler (file:, ms-msdt:, a custom scheme...). Only ever hand it a plain web address.
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+            || string.IsNullOrEmpty(uri.Host))
+        {
+            SetStatus("refused to open a non-web address in the system browser");
+            return;
+        }
+
         try
         {
-            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
             SetStatus("handed to the system browser · http(s) never renders inside Kickl");
         }
         catch (Exception ex)
@@ -5153,8 +5212,8 @@ public sealed partial class BrowserWindow : Window
         request.Headers.UserAgent.ParseAdd("KicklBrowser/0.1 news-reader");
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseContentRead);
         response.EnsureSuccessStatusCode();
-        if (response.Content.Headers.ContentLength > 2_000_000)
-            throw new FormatException("Feed is larger than 2 MB.");
+        if (response.Content.Headers.ContentLength > HttpLimits.Feed)
+            throw new FormatException("Feed is larger than 2 MB.");   // chunked replies carry no length; the client's own cap covers those
         var xml = await response.Content.ReadAsStringAsync();
         return NewsFeed.ParseRss(xml, uri.Host);
     }

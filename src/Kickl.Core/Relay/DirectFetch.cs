@@ -137,6 +137,8 @@ public sealed class DirectFetchExchange : IDisposable
     {
         if (!string.Equals(response.RequestId, Request.RequestId, StringComparison.Ordinal))
             throw new DirectFetchException("The direct-fetch response belongs to another request.");
+        if (response.Ciphertext.Length > DocumentStore.MaxDocumentBytes)
+            throw new DirectFetchException("The direct-fetch response is larger than any site package may be.");
         if (response.Ciphertext.Length == 0 || response.Nonce.Length != Aead.NonceSize)
             throw new DirectFetchException("The direct-fetch response is incomplete.");
 
@@ -242,6 +244,9 @@ public sealed class DirectPublisher : IDisposable
         var requestKey = Hkdf.Derive(tunnel, request.Salt, "kickl/v1/direct/request");
         var responseKey = Hkdf.Derive(tunnel, request.Salt, "kickl/v1/direct/response");
         CryptographicOperations.ZeroMemory(tunnel);
+
+        if (request.Ciphertext.Length > 64 * 1024)   // a request names one site; it is never large
+            throw new DirectFetchException("The direct-fetch request is larger than any request may be.");
 
         byte[] plain;
         try

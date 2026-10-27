@@ -336,7 +336,7 @@ public sealed class BrowserSession : IDisposable
     public async Task RefreshCaRevocationsAsync(HttpClient? http = null, CancellationToken ct = default)
     {
         var own = http is null;
-        http ??= new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        http ??= CaPins.NewClient(TimeSpan.FromSeconds(15));
         try { await CaPins.RefreshRevocationsAsync(_paths, http, DateTimeOffset.UtcNow, ct); }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { }
         finally { if (own) http.Dispose(); }
@@ -347,15 +347,22 @@ public sealed class BrowserSession : IDisposable
     /// a countersigned seal. The seal is checked here against the pinned root before it is kept, then published with
     /// the site so every visitor sees the VERIFIED OWNER badge.
     /// </summary>
-    public async Task<SealCheck> SubmitToCaAsync(string host, HttpClient? http = null, CancellationToken ct = default)
+    public async Task<SealCheck> SubmitToCaAsync(string host, HttpClient? http = null, CancellationToken ct = default,
+        string? ownerPassphrase = null)
     {
         host = host.ToLowerInvariant();
         var cert = HeldCert(host) ?? throw new ClaimException(
             $"Import the ownership certificate for jttp://{host}/ first; the CA seals receipts, not names.");
+        if (!string.IsNullOrEmpty(ownerPassphrase) && !cert.IsShopBound)
+        {
+            // Bind the claim to the person: the CA seals this HMAC in; it never sees the passphrase.
+            var commitment = Convert.ToHexString(SHA256.HashData(Utf8.B(cert.Token))).ToLowerInvariant();
+            (cert.OwnerSalt, cert.OwnerBinding) = OwnerBinding.Create(ownerPassphrase, host, cert.Seq, commitment);
+        }
         var root = CaPins.Root(_paths) ?? throw new ClaimException("This build has no CA root, so it cannot check the CA's answer.");
 
         var own = http is null;
-        http ??= new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        http ??= CaPins.NewClient();
         try
         {
             await CaPins.RefreshRevocationsAsync(_paths, http, DateTimeOffset.UtcNow, ct).ConfigureAwait(false);
@@ -363,8 +370,14 @@ public sealed class BrowserSession : IDisposable
 
             var check = CaTrust.VerifySeal(root, seal, host, DateTimeOffset.UtcNow, CaPins.CachedRevocations(_paths), cert.Seq);
             if (!check.Verified) throw new ClaimException("The CA's answer did not verify, so it was discarded: " + check.Reason);
+            if (!string.IsNullOrEmpty(ownerPassphrase) && !OwnerBinding.Verify(seal, ownerPassphrase))
+                throw new ClaimException("This name was already sealed without your passphrase (or with another one), so it cannot be bound now.");
+            if (cert.IsShopBound && !OwnerBinding.IsBound(new OwnershipCert { BoundBinding = "x", Seal = seal }))
+                throw new ClaimException("The CA sealed this receipt without the owner binding the shop signed. It was discarded.");
 
             cert.Seal = seal;
+            cert.OwnerSalt = cert.OwnerBinding = cert.OwnerKdf = null;
+            if (seal.OwnerBinding.Length > 0 && !string.IsNullOrEmpty(ownerPassphrase)) _ownerProven.Add(host);
             SaveCert(cert);
             DocumentStore.AttachSeal(_paths, host, seal);
             if (_document is { } d && string.Equals(d.Site, host, StringComparison.OrdinalIgnoreCase)) d.Seal = seal;
@@ -433,7 +446,32 @@ public sealed class BrowserSession : IDisposable
                                               && c.Seq == title.Seq && !c.IsExpired);
     }
 
-    public bool HoldsCert(string host) => HeldCert(host) is not null;
+    private readonly HashSet<string> _ownerProven = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Does this profile hold the current certificate AND, if the CA sealed an owner passphrase into the claim, has the owner
+    /// given it this session? A certificate file alone does not open a bound name.
+    /// </summary>
+    public bool HoldsCert(string host) =>
+        HeldCert(host) is { } cert && (!OwnerBinding.IsBound(cert) || _ownerProven.Contains(host));
+
+    /// <summary>The name's claim is bound to an owner passphrase that has not been entered yet.</summary>
+    public bool NeedsOwnerPassphrase(string host) =>
+        HeldCert(host) is { } cert && OwnerBinding.IsBound(cert) && !_ownerProven.Contains(host);
+
+    /// <summary>Check the owner's passphrase against the binding the CA sealed; on success the name opens for this session.</summary>
+    public void ProveOwner(string host, string passphrase)
+    {
+        host = host.ToLowerInvariant();
+        var cert = HeldCert(host) ?? throw new ClaimException($"This profile holds no certificate for jttp://{host}/.");
+        if (!OwnerBinding.IsBound(cert)) return;
+        if (!OwnerBinding.Verify(cert, passphrase))
+            throw new ClaimException("That is not the owner passphrase for this name.");
+        _ownerProven.Add(host);
+    }
+
+    /// <summary>The certificate is held (it is theirs on this device) even though the name is still locked by the passphrase.</summary>
+    public bool HoldsCertFile(string host) => HeldCert(host) is not null;
 
     /// <summary>Is the name claimed, and may this profile edit it (does it hold the current certificate)?</summary>
     public (bool Claimed, bool MayEdit) EditAccess(string host)
@@ -443,35 +481,50 @@ public sealed class BrowserSession : IDisposable
     }
 
     /// <summary>A copy of the certificate this profile holds, to save as a file.</summary>
-    public byte[] ExportCert(string host) =>
-        HeldCert(host)?.ToBytes() ?? throw new ClaimException($"This profile holds no certificate for jttp://{host}/.");
+    public byte[] ExportCert(string host, string passphrase) =>
+        SealedCert.Seal(HeldCert(host) ?? throw new ClaimException($"This profile holds no certificate for jttp://{host}/."), passphrase);
 
     /// <summary>
     /// A site asked for proof of ownership at /edit. The certificate is checked against the pinned shop key
     /// (fetched once if this device has never met the shop) and remembered, encrypted, in this profile.
     /// </summary>
-    public async Task<OwnershipCert> ImportCertAsync(string host, byte[] file, HttpClient? http = null, CancellationToken ct = default)
+    public async Task<OwnershipCert> ImportCertAsync(string host, byte[] file, HttpClient? http = null, CancellationToken ct = default,
+        string? passphrase = null)
     {
         if (!IsUnlocked) throw new InvalidOperationException("Unlock the profile first.");
         host = host.ToLowerInvariant();
+        if (SealedCert.IsSealed(file)) file = SealedCert.Open(file, passphrase ?? "");
         var cert = OwnershipCert.Parse(file);
         if (!string.Equals(cert.Site, host, StringComparison.OrdinalIgnoreCase))
             throw new ClaimException($"This certificate is for jttp://{cert.Site}/, not jttp://{host}/.");
 
-        var spki = SiteClaims.PinnedShopKey(_paths);
-        if (spki is null)
+        // The shop keys built into this browser are the only ones trusted. With them there is nothing to learn, no network
+        // call, and a certificate from any other key is refused. Only a build with an empty list falls back to learning the
+        // shop's key on first contact.
+        var builtIn = SiteClaims.EmbeddedShopKeys();
+        string? spki;
+        if (builtIn.Count > 0)
         {
-            var own = http is null;
-            http ??= new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-            try { spki = await SiteClaims.FetchShopKeyAsync(http, SiteClaims.ShopUrl(), ct); }
-            catch (HttpRequestException ex)
+            spki = builtIn.FirstOrDefault(k => SiteClaims.Verify(cert, k))
+                   ?? throw new ClaimException("This certificate was not signed by the Kickl shop this browser trusts. It was refused.");
+        }
+        else
+        {
+            spki = SiteClaims.PinnedShopKey(_paths);
+            if (spki is null)
             {
-                throw new ClaimException("This device has not met the BTC shop yet and cannot reach it to learn its signing key: " + ex.Message);
+                var own = http is null;
+                http ??= CaPins.NewClient();
+                try { spki = await SiteClaims.FetchShopKeyAsync(http, SiteClaims.ShopUrl(), ct); }
+                catch (HttpRequestException ex)
+                {
+                    throw new ClaimException("This device has not met the BTC shop yet and cannot reach it to learn its signing key: " + ex.Message);
+                }
+                finally { if (own) http.Dispose(); }
             }
-            finally { if (own) http.Dispose(); }
         }
 
-        SiteClaims.Accept(_paths, cert, spki, host);
+        SiteClaims.Accept(_paths, cert, spki, host, keyIsBuiltIn: builtIn.Count > 0);
         SaveCert(cert);
 
         // A certificate that comes back from the CA already sealed: publish the seal with the site, but only if it
@@ -654,6 +707,7 @@ public sealed class BrowserSession : IDisposable
 
     public void Lock()
     {
+        _ownerProven.Clear();
         _session?.Dispose();
         _session = null;
         if (_master is not null) CryptographicOperations.ZeroMemory(_master);

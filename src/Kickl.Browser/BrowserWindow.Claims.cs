@@ -22,6 +22,8 @@ public sealed partial class BrowserWindow
     private string _claimHost = "";
 
     private string _gateNote = "";
+    private readonly TextBox _ownerPassBox = new() { PasswordChar = '●', Watermark = "owner passphrase (8+ characters)", FontSize = 11 };
+    private readonly TextBox _certPassBox = new() { PasswordChar = '●', Watermark = "copy passphrase (8+ characters)", FontSize = 11 };
     private DateTime _lastRevocationRefresh = DateTime.MinValue;
     private readonly HashSet<string> _sealTried = new(StringComparer.OrdinalIgnoreCase);
 
@@ -34,7 +36,7 @@ public sealed partial class BrowserWindow
         if (!_sealTried.Add(host)) return;
         try
         {
-            await _session.SubmitToCaAsync(host);
+            await _session.SubmitToCaAsync(host, ownerPassphrase: _ownerPassBox.Text);
             if (report) Say($"Sealed automatically. The Kickl CA countersigned jttp://{host}/ and logged it; visitors now see VERIFIED OWNER.", Green);
             SetStatus($"jttp://{host}/ sealed by the Kickl CA");
             if (Active is { } tab && string.Equals(tab.Page?.Site, host, StringComparison.OrdinalIgnoreCase))
@@ -154,9 +156,16 @@ public sealed partial class BrowserWindow
         }
 
         _claimBody.Children.Add(new Border { Height = 1, Background = C(Line) });
+        _claimBody.Children.Add(T("Owner passphrase: sealed into your claim by the CA, so the certificate file alone cannot edit this name. " +
+                                  "Enter it before SEND TO CA (first seal only) and to unlock the name later:", 9.5, Muted));
+        _claimBody.Children.Add(_ownerPassBox);
+        _claimBody.Children.Add(T("Passphrase for certificate copies (protects a saved copy; needed to import one):", 9.5, Muted));
+        _claimBody.Children.Add(_certPassBox);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7, Margin = new Thickness(0, 4, 0, 0) };
         buttons.Children.Add(Btn("OPEN BTC SHOP", OpenShop, accent: true));
         buttons.Children.Add(Btn("IMPORT CERTIFICATE…", () => _ = ImportCertificate(host, fromDialog: true), accent: true));
+        if (_session.NeedsOwnerPassphrase(host))
+            buttons.Children.Add(Btn("UNLOCK WITH OWNER PASSPHRASE", () => UnlockOwner(host), accent: true));
         if (_session.HoldsCert(host))
         {
             buttons.Children.Add(Btn("SEND TO CA", () => _ = SendToCa(), accent: true));
@@ -165,7 +174,7 @@ public sealed partial class BrowserWindow
         buttons.Children.Add(Btn("CLOSE", () => _claimOverlay.IsVisible = false));
         _claimBody.Children.Add(buttons);
 
-        _claimBody.Children.Add(T("The certificate is a file. Whoever holds it can edit this name, so keep it like a key. " +
+        _claimBody.Children.Add(T("The shop's certificate file can edit this name for whoever holds it, so import it and then keep it offline. Copies saved here are passphrase-locked. " +
                                   "This profile keeps its copy encrypted.", 9, Muted, mono: true));
     }
 
@@ -200,7 +209,7 @@ public sealed partial class BrowserWindow
             await using var stream = await files[0].OpenReadAsync();
             using var buffer = new MemoryStream();
             await stream.CopyToAsync(buffer);
-            var cert = await _session.ImportCertAsync(host, buffer.ToArray());
+            var cert = await _session.ImportCertAsync(host, buffer.ToArray(), passphrase: _certPassBox.Text ?? "");
             var expires = DateTimeOffset.FromUnixTimeSeconds(cert.Expires).ToLocalTime();
 
             if (fromDialog)
@@ -234,13 +243,29 @@ public sealed partial class BrowserWindow
         }
     }
 
+    private void UnlockOwner(string host)
+    {
+        try
+        {
+            _session.ProveOwner(host, _ownerPassBox.Text ?? "");
+            Say($"Owner passphrase accepted. jttp://{host}/ is unlocked for this session.", Green);
+            if (Active is { } tab && string.Equals(tab.Page?.Site, host, StringComparison.OrdinalIgnoreCase))
+                tab.Ownership = _session.OwnershipOf(host);
+        }
+        catch (Exception ex)
+        {
+            Say(ex.Message, Red);
+        }
+        RebuildClaim();
+    }
+
     private async Task SendToCa()
     {
         Say("Sending your receipt to the Kickl CA…", Muted);
         RebuildClaim();
         try
         {
-            var check = await _session.SubmitToCaAsync(_claimHost);
+            var check = await _session.SubmitToCaAsync(_claimHost, ownerPassphrase: _ownerPassBox.Text);
             Say($"Sealed. The CA countersigned jttp://{_claimHost}/ and wrote it to its transparency log. " +
                 "The seal is published with your site; visitors now see VERIFIED OWNER.", Green);
             if (Active is { } tab && string.Equals(tab.Page?.Site, _claimHost, StringComparison.OrdinalIgnoreCase))
@@ -258,7 +283,7 @@ public sealed partial class BrowserWindow
     {
         try
         {
-            var bytes = _session.ExportCert(_claimHost);
+            var bytes = _session.ExportCert(_claimHost, _certPassBox.Text ?? "");
             var target = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
             {
                 Title = "Save a copy of your ownership certificate",
@@ -269,7 +294,7 @@ public sealed partial class BrowserWindow
             if (target is null) return;
             await using var stream = await target.OpenWriteAsync();
             await stream.WriteAsync(bytes);
-            Say("Certificate copy saved. Keep it safe; it is the proof of ownership.", Green);
+            Say("Certificate copy saved, locked with your passphrase. Keep the passphrase safe: without it the copy cannot be opened.", Green);
         }
         catch (Exception ex)
         {
@@ -356,6 +381,8 @@ public sealed partial class BrowserWindow
         stack.Children.Add(T($"jttp://{host}/ has been claimed, so editing it needs the ownership certificate the owner " +
                              "downloaded from the BTC shop. Choose that file to continue.", 12, Muted));
 
+        stack.Children.Add(T("If you sealed this name with an owner passphrase, enter it first:", 10.5, Muted));
+        stack.Children.Add(_ownerPassBox);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 };
         actions.Children.Add(Btn("CHOOSE OWNERSHIP CERTIFICATE…", () => _ = PresentCertificate(tab), accent: true));
         actions.Children.Add(Btn("CLAIM THIS SITE", () => OpenClaim(host)));
@@ -382,6 +409,17 @@ public sealed partial class BrowserWindow
         {
             RenderAll(resetScroll: false);
             return;
+        }
+
+        if (_session.NeedsOwnerPassphrase(host))
+        {
+            try { _session.ProveOwner(host, _ownerPassBox.Text ?? ""); }
+            catch (Exception ex)
+            {
+                _gateNote = ex.Message + " The certificate is imported, but this name is locked to its owner's passphrase.";
+                RenderAll(resetScroll: false);
+                return;
+            }
         }
 
         tab.EditGate = null;

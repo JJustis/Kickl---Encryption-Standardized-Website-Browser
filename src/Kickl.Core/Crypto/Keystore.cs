@@ -70,6 +70,8 @@ public static class Keystore
                 stream.Flush(flushToDisk: true);
             }
             File.Move(temporaryPath, paths.Keystore);
+            FileProtection.Restrict(Path.GetDirectoryName(paths.Keystore)!);
+            FileProtection.Restrict(paths.Keystore);
             temporaryPath = null;
         }
         finally
@@ -173,6 +175,7 @@ public static class Keystore
                 stream.Flush(flushToDisk: true);
             }
             File.Replace(temporaryPath, paths.Keystore, destinationBackupFileName: null);
+            FileProtection.Restrict(paths.Keystore);
             temporaryPath = null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CryptographicException)

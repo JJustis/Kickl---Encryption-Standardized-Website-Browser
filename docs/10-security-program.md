@@ -242,3 +242,10 @@ download binaries.
    lower to 32 MiB only with a documented reason.)
 6. Can we delete WebView2 profile data reliably on all supported versions? (Test G11.)
 7. Is TPM sealing available and stable on Windows 10 22H2 without a Microsoft account? (Test G2.)
+
+
+## Status note (2026-10-27)
+
+The implementation has had an in-house security audit in three rounds; findings, fixes and the list of things that
+remain open or cannot be fixed by the author are in `docs/24-security-audit.md`. An independent penetration test is
+still outstanding and is the one item only an outside party can supply.

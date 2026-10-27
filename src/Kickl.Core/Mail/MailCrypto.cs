@@ -349,7 +349,7 @@ internal static class MailJson
 public sealed class MailIdentity : IDisposable
 {
     internal MailIdentity(RSA rsa, MLDsa mlDsa, MailIdentityBundle bundle, string token,
-        byte[] rsaPkcs8, byte[] mlDsaPkcs8)
+        byte[] rsaPkcs8, byte[] mlDsaPkcs8, System.Security.Cryptography.X509Certificates.X509Certificate2 tls)
     {
         Rsa = rsa;
         MlDsa = mlDsa;
@@ -357,6 +357,22 @@ public sealed class MailIdentity : IDisposable
         Token = token;
         RsaPkcs8 = rsaPkcs8;
         MlDsaPkcs8 = mlDsaPkcs8;
+        TlsCertificate = tls;
+    }
+
+    /// <summary>This device's TLS certificate for the direct-delivery listener. Only its key is trusted, through the pin.</summary>
+    public System.Security.Cryptography.X509Certificates.X509Certificate2 TlsCertificate { get; }
+    public string TlsPin => MailTls.PinOf(TlsCertificate);
+    public byte[] TlsPkcs12 => MailTls.Export(TlsCertificate);
+
+    /// <summary>True when loading this identity had to change its published endpoint (it was unpinned or plain http), so it must be republished.</summary>
+    public bool TransportUpgraded { get; private set; }
+
+    /// <summary>Publish <paramref name="endpoint"/> as https with this device's pin, and re-sign the bundle so the pin is authenticated.</summary>
+    public void SetEndpoint(string endpoint)
+    {
+        Bundle.Endpoint = MailEndpoint.WithPin(endpoint, TlsPin);
+        Bundle.Sig = Sign(Bundle.CanonicalBytes());
     }
 
     public RSA Rsa { get; }
@@ -377,6 +393,7 @@ public sealed class MailIdentity : IDisposable
         var shortId = RandomNumberGenerator.GetInt32(10_000_000, 100_000_000).ToString();
         var id = Hashing.Hex(RandomNumberGenerator.GetBytes(12));
         var token = B64u.Encode(RandomNumberGenerator.GetBytes(32));
+        var tls = MailTls.CreateSelfSigned();
         var rsa = RSA.Create(3072);
         var mlDsa = MLDsa.GenerateKey(MLDsaAlgorithm.MLDsa65);
         var rsaPkcs8 = rsa.ExportPkcs8PrivateKey();
@@ -386,29 +403,45 @@ public sealed class MailIdentity : IDisposable
             Id = id,
             ShortId = shortId,
             Handle = handle.Trim(),
-            Endpoint = endpoint ?? MailEndpoint.Local(),
+            Endpoint = MailEndpoint.WithPin(endpoint ?? MailEndpoint.LocalBase(), MailTls.PinOf(tls)),
             RsaPublicKey = B64u.Encode(rsa.ExportSubjectPublicKeyInfo()),
             MlDsaPublicKey = B64u.Encode(mlDsa.ExportMLDsaPublicKey()),
             CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
         };
         bundle.Sig = B64u.Encode(mlDsa.SignData(bundle.CanonicalBytes()));
-        return new MailIdentity(rsa, mlDsa, bundle, token, rsaPkcs8, mlDsaPkcs8);
+        return new MailIdentity(rsa, mlDsa, bundle, token, rsaPkcs8, mlDsaPkcs8, tls);
     }
 
     public static MailIdentity Restore(MailIdentityBundle bundle, string token,
-        byte[] rsaPkcs8, byte[] mlDsaPkcs8)
+        byte[] rsaPkcs8, byte[] mlDsaPkcs8, byte[]? tlsPkcs12 = null)
     {
         bundle.Validate();
         var rsa = RSA.Create();
         rsa.ImportPkcs8PrivateKey(rsaPkcs8, out _);
         var mlDsa = MLDsa.ImportPkcs8PrivateKey(mlDsaPkcs8);
-        return new MailIdentity(rsa, mlDsa, bundle, token, rsaPkcs8, mlDsaPkcs8);
+
+        // An identity made before mail was TLS-only has no transport key. Give it one.
+        var hadKey = tlsPkcs12 is { Length: > 0 };
+        var tls = hadKey ? MailTls.Import(tlsPkcs12!) : MailTls.CreateSelfSigned();
+        var identity = new MailIdentity(rsa, mlDsa, bundle, token, rsaPkcs8, mlDsaPkcs8, tls);
+
+        // ...and its published endpoint must be https with exactly that key's pin. Keep the host and port; fix the rest.
+        string wanted;
+        try { wanted = MailEndpoint.WithPin(bundle.Endpoint, identity.TlsPin); }
+        catch (ArgumentException) { wanted = MailEndpoint.WithPin(MailEndpoint.LocalBase(), identity.TlsPin); }
+        if (!hadKey || !string.Equals(wanted, bundle.Endpoint, StringComparison.Ordinal))
+        {
+            identity.SetEndpoint(wanted);
+            identity.TransportUpgraded = true;
+        }
+        return identity;
     }
 
     public void Dispose()
     {
         Rsa.Dispose();
         MlDsa.Dispose();
+        TlsCertificate.Dispose();
         CryptographicOperations.ZeroMemory(RsaPkcs8);
         CryptographicOperations.ZeroMemory(MlDsaPkcs8);
     }
