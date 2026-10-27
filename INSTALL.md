@@ -89,6 +89,7 @@ Sign in with the fixed key **`1234`**. Use the demo for experiments only, never 
 
 **Games.** The arcade on the home page lists every game in the `games/` folder (Crystal Caverns, Coin Dash, Plasma, Hello). To add one, put a folder with a
 `game.wasm` in `games/`, or in a `games` folder inside your data folder. `kickl games` lists what is found. See `games/README.md`.
+To add your own game, press **ADD A GAME…** in the arcade: choose the `.wasm`, give it a title, and share it.
 The arcade also lists games other people have shared, as dimmed DOWNLOAD cards; clicking one asks before it downloads the game from the publisher or another computer.
 **SHARING: ON** (the default) means this computer hands the games it has to others, over an encrypted connection, on one port; the switch is on the arcade.
 | `jttp://btcshop.com` | an example Bitcoin shop (testnet); the demo access key for its sealed file is `demo-paid` |

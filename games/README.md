@@ -25,7 +25,8 @@ A game runs in the same sandbox, with the same limits, as a game on a page (no n
 10 million instructions a frame). If a game cannot run, its card says why. Check a game before you drop it in with
 `kickl game-check game.wasm`, and see what the browser found with `kickl games`.
 
-**Sharing.** A game you put in your own games folder can be shared with everyone: press **SHARE THIS GAME** on its card in the arcade (or `kickl games publish <id>`).
+**Sharing.** The easy way to add and share a game is the **ADD A GAME…** wizard in the arcade: choose your `.wasm`, give it a title, press **ADD AND SHARE**. (Or put a folder here yourself and press
+**SHARE THIS GAME** on its card, or run `kickl games publish <id>`.)
 Other computers then see a dimmed **DOWNLOAD** card for it, and clicking it downloads the game from you, or from anyone who has already downloaded it, after checking it against
 your signature. Games you download land in your own games folder and are served onward. See [`docs/28-game-sharing.md`](../docs/28-game-sharing.md).
 

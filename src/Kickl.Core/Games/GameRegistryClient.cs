@@ -26,8 +26,13 @@ public sealed class GameRegistryClient : IDisposable
     public GameRegistryClient(string? baseUrl = null, HttpClient? http = null)
     {
         _ownsHttp = http is null;
-        _http = (http ?? new HttpClient(new SocketsHttpHandler { ConnectTimeout = TimeSpan.FromSeconds(3), AllowAutoRedirect = false })
-        { Timeout = TimeSpan.FromSeconds(20) }).Limit(HttpLimits.Mail);
+        _http = (http ?? new HttpClient(new SocketsHttpHandler
+        {
+            ConnectTimeout = TimeSpan.FromSeconds(3),
+            AllowAutoRedirect = false,
+            PooledConnectionIdleTimeout = TimeSpan.FromSeconds(10),   // see MailClient: do not reuse a connection a router may have forgotten
+            PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+        }) { Timeout = TimeSpan.FromSeconds(60) }).Limit(HttpLimits.Mail);
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("KicklGames/0.1");
         var value = baseUrl ?? DefaultBase;
 #if DEBUG
@@ -93,22 +98,22 @@ public sealed class GameRegistryClient : IDisposable
     }
 
     private Task<JsonDocument> GetAsync(string relative, string action, CancellationToken cancellationToken) =>
-        HttpRetry.RunAsync(async () =>
+        HttpRetry.RunAsync(async ct =>
         {
-            using var response = await _http.GetAsync(new Uri(_baseUri, relative), cancellationToken).ConfigureAwait(false);
-            return await ParseAsync(response, action, cancellationToken).ConfigureAwait(false);
+            using var response = await _http.GetAsync(new Uri(_baseUri, relative), ct).ConfigureAwait(false);
+            return await ParseAsync(response, action, ct).ConfigureAwait(false);
         }, cancellationToken);
 
     // Publishing, announcing and removing are all safe to repeat (they set a state), so they are retried too
     private Task<JsonDocument> PostAsync(string relative, object body, string action, CancellationToken cancellationToken) =>
-        HttpRetry.RunAsync(async () =>
+        HttpRetry.RunAsync(async ct =>
         {
             using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(_baseUri, relative))
             {
                 Content = new StringContent(JsonSerializer.Serialize(body, Json), Encoding.UTF8, "application/json")
             };
-            using var response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
-            return await ParseAsync(response, action, cancellationToken).ConfigureAwait(false);
+            using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+            return await ParseAsync(response, action, ct).ConfigureAwait(false);
         }, cancellationToken);
 
     private static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };

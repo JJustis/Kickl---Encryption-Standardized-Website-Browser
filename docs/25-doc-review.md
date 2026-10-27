@@ -26,7 +26,7 @@ description of shipped behaviour.
 | `docs/06-shell-ux.md` | spec / ok | |
 | `docs/07-blob-markup-cache.md` | updated | Element table gains `game`, `shop`, `product`. The 64 MP page-image tiling cap is a different limit from the 16 MP stego reader cap (`docs/18`) |
 | `docs/26-game-tutorial.md` | new | A step-by-step tutorial: four games from a gradient to a 3D maze, the `kickl game-check` tool, publishing, and the pitfalls hit while building them |
-| `docs/28-game-sharing.md` | new | Signed cards, publishing, downloading from a publisher or mirror, serving, the registry API, what it protects and what it does not |
+| `docs/28-game-sharing.md` | new (wizard added) | Signed cards, publishing, downloading from a publisher or mirror, serving, the registry API, what it protects and what it does not |
 | `games/README.md` | new | The games folder: the layout, `game.json`, where the browser looks, and the limits |
 | `docs/27-shop-syntax.md` | new | The `<shop>` / `<product>` syntax, address checking, publishing, the `jttp://btcshop.com` example, and what it does not do |
 | `docs/08-mail-freechat.md` | updated | §12 gains the pinned-TLS transport; new §12.1 FreeChat as shipped (https only, TOFU key pins, signed messages, bounds); checklist ticked |

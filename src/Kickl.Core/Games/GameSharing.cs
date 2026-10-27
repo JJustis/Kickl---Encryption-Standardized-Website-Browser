@@ -155,6 +155,39 @@ public sealed class GameSharing : IDisposable
         return (key, token);
     }
 
+    /// <summary>The id that identifies this profile as a publisher (a short hash of its public key). Games published by it are "yours".</summary>
+    public string MyPublisherId()
+    {
+        var (key, _) = Publisher();
+        using (key) return GameCard.PublisherIdOf(key.ExportMLDsaPublicKey());
+    }
+
+    /// <summary>Did this profile publish this game? (Its signed card was made with this profile's publisher key.)</summary>
+    public bool IsMine(GameEntry game, string myPublisherId) => game.Card is { } card && card.PublisherId == myPublisherId;
+
+    /// <summary>
+    /// Stop sharing a game you published: remove its card from the registry (only the publisher can) and from the game's folder. The game stays on this
+    /// computer, and on any computer that already downloaded it; it just stops being offered to new ones. Publishing it again makes a new card.
+    /// </summary>
+    public async Task UnpublishAsync(GameEntry game, CancellationToken cancellationToken = default)
+    {
+        var (key, token) = Publisher();
+        using (key)
+        {
+            var publisherId = GameCard.PublisherIdOf(key.ExportMLDsaPublicKey());
+            if (game.Card is null || game.Card.PublisherId != publisherId) throw new GameCardException("This game was not published by this profile.");
+            await _registry.RemoveAsync(publisherId, game.Card.Id, TokenHash(token), cancellationToken).ConfigureAwait(false);
+            lock (_gate) _cards.Remove(publisherId + "/" + game.Card.Id);
+            SaveCardCache();
+            var path = Path.Combine(game.Folder, GameLibrary.MetaFile);
+            if (File.Exists(path) && JsonNode.Parse(File.ReadAllText(path)) is JsonObject meta)
+            {
+                meta.Remove("card");
+                File.WriteAllText(path, meta.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            }
+        }
+    }
+
     public static string TokenHash(string token) => Hashing.Hex(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(token)));
 
     /// <summary>

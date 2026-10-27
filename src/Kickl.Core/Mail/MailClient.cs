@@ -32,8 +32,15 @@ public sealed class MailClient : IDisposable
         _ownsHttp = http is null;
         // A connection that has not been made in a few seconds is usually a dropped first packet (a router that reflects its own public
         // address back into the LAN does this), not a slow server. Give up on it quickly and let the retry open a fresh one.
-        _http = (http ?? new HttpClient(new SocketsHttpHandler { ConnectTimeout = ConnectTimeout, AllowAutoRedirect = false })
-        { Timeout = TimeSpan.FromSeconds(20) }).Limit(HttpLimits.Mail);
+        _http = (http ?? new HttpClient(new SocketsHttpHandler
+        {
+            ConnectTimeout = ConnectTimeout,
+            AllowAutoRedirect = false,
+            // A router that quietly forgets an idle connection leaves the next request to wait out its whole timeout, so idle connections are
+            // dropped long before that and every connection is renewed now and then.
+            PooledConnectionIdleTimeout = TimeSpan.FromSeconds(10),
+            PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+        }) { Timeout = TimeSpan.FromSeconds(60) }).Limit(HttpLimits.Mail);
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("KicklMail/0.1");
         var baseValue = baseUrl ?? DefaultBase;
         _baseUri = new Uri(baseValue.EndsWith('/') ? baseValue : baseValue + "/", UriKind.Absolute);
@@ -44,16 +51,16 @@ public sealed class MailClient : IDisposable
     {
         var tokenHash = Hashing.Hex(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
         // Registering is an upsert, so doing it again after a dropped connection is safe
-        await WithRetryAsync(async () =>
+        await WithRetryAsync(async ct =>
         {
             using var response = await PostJsonAsync(new Uri(_baseUri, "v1/mail/identity"),
-                new { bundle, tokenHash }, cancellationToken).ConfigureAwait(false);
-            await ReadObjectAsync(response, "identity", cancellationToken).ConfigureAwait(false);
+                new { bundle, tokenHash }, ct).ConfigureAwait(false);
+            await ReadObjectAsync(response, "identity", ct).ConfigureAwait(false);
             return true;
         }, cancellationToken).ConfigureAwait(false);
     }
 
-    private static Task<T> WithRetryAsync<T>(Func<Task<T>> operation, CancellationToken cancellationToken) =>
+    private static Task<T> WithRetryAsync<T>(Func<CancellationToken, Task<T>> operation, CancellationToken cancellationToken) =>
         HttpRetry.RunAsync(operation, cancellationToken);
 
     public async Task<MailIdentityBundle> LookupAsync(string shortId,
@@ -63,12 +70,12 @@ public sealed class MailClient : IDisposable
         if (normalized.Length != 8)
             throw new ArgumentException("A PFS ID is exactly eight digits.", nameof(shortId));
 
-        using var document = await WithRetryAsync(async () =>
+        using var document = await WithRetryAsync(async ct =>
         {
             using var response = await _http.GetAsync(
-                new Uri(_baseUri, "v1/mail/lookup?short=" + normalized), cancellationToken)
+                new Uri(_baseUri, "v1/mail/lookup?short=" + normalized), ct)
                 .ConfigureAwait(false);
-            return await ParseAsync(response, "lookup", cancellationToken).ConfigureAwait(false);
+            return await ParseAsync(response, "lookup", ct).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
         if (!document.RootElement.TryGetProperty("bundle", out var bundleElement)
             || bundleElement.ValueKind != JsonValueKind.Object)

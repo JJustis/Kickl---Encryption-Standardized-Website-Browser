@@ -433,10 +433,12 @@ committed unnoticed.
 
 ### 8.1.1 Share it with everyone
 
-A game in **your own** games folder (`<your data folder>/games/my-game/`) can be shared: press **SHARE THIS GAME** on its arcade card, or `kickl games publish my-game --pin YOUR-PIN`.
+The quick way is the wizard: in the arcade press **ADD A GAME…**, choose your `.wasm`, give it a title, and press **ADD AND SHARE**. The browser checks the game, shows you what it draws and how much
+of the budget it uses, and publishes it under your key; the game is yours (only you can update or remove it). Without the wizard, a game in **your own** games folder
+(`<your data folder>/games/my-game/`) can be shared by pressing **SHARE THIS GAME** on its arcade card, or `kickl games publish my-game --pin YOUR-PIN`.
 That signs a small card for your game and puts it in the registry. From then on every computer running Kickl shows a dimmed **DOWNLOAD** card for it in the arcade, and
 clicking one downloads the game from your computer (while the browser is open) or from anyone who has already downloaded it, after checking it against your signature.
-Every download makes one more computer that can pass it on. Publish again after you change the file and the card's version goes up. The full story, including what
+Every download makes one more computer that can pass it on. Publish again after you change the file (run the wizard again with the same title) and the card's version goes up. The full story, including what
 this does and does not protect, is in [`docs/28-game-sharing.md`](28-game-sharing.md).
 
 ### 8.2 On a page

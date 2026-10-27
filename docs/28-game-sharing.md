@@ -45,7 +45,20 @@ computer.
 
 ## 3. Publishing a game
 
-Put the game in your **own games folder** (`<your data folder>/games/<id>/game.wasm`, see `games/README.md`) and press **SHARE THIS GAME** on its arcade card, or:
+**The easy way: the wizard.** In the arcade, press **ADD A GAME…**. Three steps, no folders, no JSON, no commands:
+
+1. **Choose the file.** Pick your compiled game (a `.wasm`). The browser runs it in the sandbox and shows you what it drew, how much of the instruction budget a frame uses, and whether its
+   memory stays steady, or tells you plainly why it was refused (too big, not a game, stopped when run).
+2. **Describe it.** Title, a one-line tagline, your name, and a colour. The title becomes the game's folder name; if it matches a game of yours already, the wizard says it is an update and shows the
+   version going up.
+3. **Add it.** Tick **Share it with everyone** (on by default) and press **ADD AND SHARE**. The game is added to your arcade and its card is signed and published in one go. Untick it to keep the game
+   on this computer and share it later.
+
+**It is yours.** The card is signed with your profile's publisher key, so only you can update it or take it down, and everyone who downloads it can see it came from you and has not been changed.
+Games you published show **yours, shared** on their card with a **STOP SHARING** button, which removes the card from the registry (the game stays on your computer and on any computer that already has it).
+To update a game, run the wizard again with the new file and the same title.
+
+**Without the wizard.** Put the game in your **own games folder** (`<your data folder>/games/<id>/game.wasm`, see `games/README.md`) and press **SHARE THIS GAME** on its arcade card, or:
 
 ```
 kickl games publish my-game --pin YOUR-PIN

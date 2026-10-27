@@ -318,6 +318,12 @@ internal sealed class FakeGameRegistry : HttpMessageHandler
                 result = (HttpStatusCode.OK, new { ok = true });
             }
         }
+        else if (request.Method == HttpMethod.Post && path.EndsWith("/v1/games/remove"))
+        {
+            var body = JsonNode.Parse(request.Content!.ReadAsStringAsync(ct).Result)!;
+            var removed = Cards.Remove((string) body["publisherId"]! + "/" + (string) body["id"]!);
+            result = (HttpStatusCode.OK, new { removed });
+        }
         else result = (HttpStatusCode.NotFound, new { error = "unknown" });
 
         return Task.FromResult(new HttpResponseMessage(result.code)

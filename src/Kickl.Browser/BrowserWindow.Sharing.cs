@@ -39,8 +39,8 @@ public sealed partial class BrowserWindow
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(12),
             Padding = new Thickness(18),
-            Width = 560,
-            MaxHeight = 560,
+            Width = 620,
+            MaxHeight = 660,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
             Child = new ScrollViewer { Content = _gameBody }
@@ -122,6 +122,8 @@ public sealed partial class BrowserWindow
         _announceTimer?.Stop();
         _announceTimer = null;
         _gameOverlay.IsVisible = false;
+        _wizard = null;
+        _myPublisherId = null;
         _sharing?.Dispose();
         _sharing = null;
         _gameRegistry?.Dispose();
@@ -168,6 +170,7 @@ public sealed partial class BrowserWindow
         var sharing = EnsureSharing();
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         var on = _shareGames && sharing?.IsSeeding == true;
+        row.Children.Add(Btn("ADD A GAME…", OpenWizard, accent: true));
         row.Children.Add(Btn(_shareGames ? "SHARING: ON" : "SHARING: OFF", ToggleSharing, accent: _shareGames));
         row.Children.Add(T(_shareGames
                 ? (on ? "this computer hands the games it has to people who click them" : "sharing is on but could not start")
@@ -226,12 +229,39 @@ public sealed partial class BrowserWindow
         if (_sharing is null || game.Error is not null || game.Card is not null) return null;
         // only games the reader put in their own games folder; the ones that ship with the program are already everyone's
         if (!Path.GetFullPath(game.Folder).StartsWith(Path.GetFullPath(_sharing.GamesRoot), StringComparison.OrdinalIgnoreCase)) return null;
-        var button = Btn("SHARE THIS GAME", () => _ = PublishLibraryGameAsync(game));
+        var button = Btn("SHARE THIS GAME", () => _ = PublishLibraryGameAsync(game), accent: true);
         button.FontSize = 7.5;
         button.Padding = new Thickness(6, 1);
         button.Height = 20;
         ToolTip.SetTip(button, "Publish this game's card to the registry so other computers can download it from yours.");
         return button;
+    }
+
+    /// <summary>On a game you published: take its card out of the registry. The game stays on this computer.</summary>
+    private Control StopSharingButton(GameEntry game)
+    {
+        var button = Btn("STOP SHARING", () => _ = UnpublishLibraryGameAsync(game));
+        button.FontSize = 7.5;
+        button.Padding = new Thickness(6, 1);
+        button.Height = 20;
+        ToolTip.SetTip(button, "Remove this game's card from the registry so nobody new can download it. It stays on this computer, and on any computer that already has it.");
+        return button;
+    }
+
+    private async Task UnpublishLibraryGameAsync(GameEntry game)
+    {
+        var sharing = EnsureSharing();
+        if (sharing is null) { _lockOverlay.IsVisible = true; return; }
+        try
+        {
+            await sharing.UnpublishAsync(game);
+            SetStatus($"{game.Title} is no longer shared; it stays on this computer");
+            RenderAll(resetScroll: false);
+        }
+        catch (Exception ex) when (ex is GameRegistryException or GameCardException or HttpRequestException or TaskCanceledException)
+        {
+            SetStatus("could not stop sharing · " + ex.Message);
+        }
     }
 
     private async Task PublishLibraryGameAsync(GameEntry game)
