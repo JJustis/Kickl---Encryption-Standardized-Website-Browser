@@ -69,7 +69,27 @@ public static class MailEndpoint
     public static int PickFreePort() => FreePort();
 
     /// <summary>The LAN address and a free port, without a pin yet. A device behind NAT must forward the port or publish its public host.</summary>
-    public static string LocalBase() => $"https://{LocalAddress()}:{FreePort()}";
+    public static string LocalBase() => $"https://{LocalAddress()}:{PreferredPort()}";
+
+    /// <summary>The port a new mail endpoint uses unless another program already holds it.</summary>
+    public const int DefaultPort = 25;
+
+    /// <summary>Set by the tests, which run many mail services at once and cannot share one port.</summary>
+    internal static bool UseFreePortInstead { get; set; }
+
+    /// <summary>The default port when it can be bound here, else a free one.</summary>
+    public static int PreferredPort()
+    {
+        if (UseFreePortInstead) return FreePort();
+        try
+        {
+            var probe = new System.Net.Sockets.TcpListener(IPAddress.Any, DefaultPort);
+            probe.Start();
+            probe.Stop();
+            return DefaultPort;
+        }
+        catch (System.Net.Sockets.SocketException) { return FreePort(); }
+    }
 
     /// <summary>
     /// Make <paramref name="endpoint"/> the canonical secure form for this device: https, no path, and this device's pin.

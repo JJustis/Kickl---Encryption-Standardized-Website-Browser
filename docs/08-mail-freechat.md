@@ -268,7 +268,7 @@ The live app now has a working mail slice that follows the brief's direct-delive
 - **Read-on-click.** Inbox rows show only the sender/date and `SEALED · click to open`; no subject
   or body preview is rendered until the row is opened. A decrypted body is displayed as image
   pages, not selectable text.
-- **Direct endpoint caveat.** The advertised endpoint is the device's LAN address and a free port.
+- **Direct endpoint caveat.** The advertised endpoint is the device's LAN address and port 25 (or a free port if another program holds 25). Existing identities keep the port they already advertise.
   Remote delivery needs that port forwarded (or an endpoint update via `PUBLISH`). A wrong mail
   password is an authentication failure and leaves the vault untouched.
 - **The wire is TLS 1.3 with a pinned key** (hardened 2026-10-27). Each mail identity carries a

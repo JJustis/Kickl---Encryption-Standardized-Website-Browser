@@ -94,15 +94,24 @@ public sealed class MailService : IDisposable
             if (string.Equals(recipient.ShortId, identity.Bundle.ShortId, StringComparison.Ordinal))
                 recipient = identity.Bundle;
 
+            var toSelf = string.Equals(recipient.ShortId, identity.Bundle.ShortId, StringComparison.Ordinal);
             var sealedMail = MailCrypto.Seal(identity, recipient, subject, body, coverPng);
             try
             {
+                if (toSelf)
+                {
+                    // Mail to yourself never leaves this computer. (Going out to our own listener would wait for the operation lock this call holds.)
+                    AcceptDelivery(sealedMail.Envelope, sealedMail.Image);
+                    Store.SaveOutgoing(sealedMail, recipient.Handle);
+                    return;
+                }
                 try
                 {
                     await _client.DeliverAsync(recipient, sealedMail.Envelope, sealedMail.Image,
                         cancellationToken).ConfigureAwait(false);
                 }
-                catch (HttpRequestException first)
+                catch (Exception first) when (first is HttpRequestException
+                                              || (first is OperationCanceledException && !cancellationToken.IsCancellationRequested))   // a delivery that timed out is a failed delivery, not a cancelled one
                 {
                     // If the sender and recipient are two profiles on this same machine, the
                     // advertised LAN address can be blocked by the firewall while loopback is
@@ -120,6 +129,12 @@ public sealed class MailService : IDisposable
                         }
                         catch (Exception) { /* fall through to the original endpoint error */ }
                     }
+
+                    if (first is OperationCanceledException)
+                        throw new MailServiceException(
+                            "The recipient's endpoint " + recipient.Endpoint + " accepted no mail within 30 seconds. The device must be online with mail unlocked, " +
+                            "and its port must be forwarded on its router. If the recipient is on the same network as you, " +
+                            "their router may not loop a public address back inside: ask them to publish their local address instead.", null, first);
 
                     if (first.GetBaseException() is System.Security.Authentication.AuthenticationException)
                         throw new MailServiceException(
@@ -155,7 +170,13 @@ public sealed class MailService : IDisposable
         CancellationToken cancellationToken = default)
     {
         await _ops.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
+        try { return AcceptDelivery(envelope, image); }
+        finally { _ops.Release(); }
+    }
+
+    /// <summary>The checks and the write of <see cref="AcceptDeliveryAsync"/>; the caller must hold the operation lock.</summary>
+    private bool AcceptDelivery(MailEnvelope envelope, byte[] image)
+    {
         {
             var identity = Store.Identity;
             if (identity is null || !Store.IsUnlocked)
@@ -187,10 +208,6 @@ public sealed class MailService : IDisposable
             LastDelivered++;
             LastSyncUtc = DateTimeOffset.UtcNow;
             return true;
-        }
-        finally
-        {
-            _ops.Release();
         }
     }
 

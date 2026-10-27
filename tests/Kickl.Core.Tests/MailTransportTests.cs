@@ -523,3 +523,38 @@ public sealed class MailClientRetryTests
         Assert.Equal(2, handler.Calls);
     }
 }
+
+public sealed class MailToSelfTests
+{
+    private sealed class Registry(Func<HttpRequestMessage, string> answer) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent(answer(request), System.Text.Encoding.UTF8, "application/json")
+            });
+    }
+
+    [Fact]
+    public async Task MailToYourself_ArrivesAtOnce_InsteadOfWaitingForItsOwnListener()
+    {
+        using var temp = new TempDir();
+        MailService? service = null;
+        var handler = new Registry(r => r.Method == HttpMethod.Get
+            ? System.Text.Json.JsonSerializer.Serialize(new { bundle = service!.Store.Bundle }, MailJson.Options)
+            : "{\"ok\":true}");
+        using var client = new MailClient("https://example.test/api", new HttpClient(handler));
+        service = new MailService(new DataPaths(temp.Path), client);
+        using (service)
+        {
+            service.Store.CreateVault("correct horse battery");
+            service.Store.EnsureIdentity("me");
+            service.StartListener();
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            await service.SendAsync(service.Store.Bundle!.ShortId, "note to self", "remember the milk");
+            Assert.True(sw.Elapsed < TimeSpan.FromSeconds(20), $"took {sw.Elapsed}: the send waited on the listener");
+            Assert.Equal(1, service.LastDelivered);
+            Assert.Single(service.Store.List());
+        }
+    }
+}
