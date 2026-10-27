@@ -151,6 +151,8 @@ host string (RAM, plaintext)
 - mesh frames
 - the direct-mail wire (TLS 1.3, pinned to the recipient's own key; see `docs/08` §12) and the mail identity's TLS key
 - FreeChat key pins, the FreeChat signing key and the stored credentials (`freechat-prefs`)
+- the game publisher key, the game-serving key and the sharing switch (`game-publisher.kpf`, `game-seed.kpf`, `arcade-prefs.kpf`)
+- game downloads and game serving on the wire (TLS 1.3 pinned to the source's key; every file checked against the signed card, `docs/28`)
 - passphrase-sealed `.kcert` copies the browser saves (Argon2id + AES-256-GCM, bound to the site name)
 
 These profile files use purpose-separated HKDF keys derived from the unlocked master key and

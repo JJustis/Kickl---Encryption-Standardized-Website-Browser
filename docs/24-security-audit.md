@@ -103,3 +103,12 @@ Owner binding can now also be set on the CA's own web page (WebCrypto PBKDF2, 60
 
 ## Round 6 (2026-10-27): owner binding signed by the shop
 The two remaining owner-binding gaps are closed for names bought with a passphrase: the shop signs the binding into the receipt, so there is no "first seal decides", and a copy with its seal stripped is still locked because the binding is in the shop-signed part. Still true: a name bought **without** a passphrase is a bearer file, exactly as before; and the binding protects editing, not reading the receipt file itself.
+
+## Round 7 (2026-10-27): sharing games between computers
+New surface, reviewed as it was built (`docs/28-game-sharing.md` §6): (1) **cards** are signed with ML-DSA-65 and verified by every client; the registry cannot forge one. (2) A downloaded game is accepted
+only if its length and SHA-256 match the signed card, it loads in the sandbox with no imports, and it fits the limits; nothing is written before that. (3) Downloads use TLS 1.3 pinned to the key in the source's
+address, no proxy, no redirects, at most 8 sources, and read no more than the card's size, so a hostile source or a hostile list cannot make the client buffer or trust anything. (4) The serving listener answers one
+fixed request for games the computer holds, with the mail listener's connection caps and deadlines. (5) The registry validates structure, size, the publisher-id-to-key binding and token ownership, and rate limits
+every endpoint. **Found while testing:** a metadata size limit that silently dropped a downloaded game's card, and a same-second cursor bug that would have missed updates (both fixed, with tests).
+**Open:** a game can be published under a misleading title (cards show the publisher fingerprint); there is no reporting or review beyond operator removal; a source address can point a client at an arbitrary
+host (the client makes one pinned request and checks the content); and an operator-controlled registry decides which cards you see, though not what any game contains.

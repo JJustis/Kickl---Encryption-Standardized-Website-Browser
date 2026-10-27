@@ -22,7 +22,7 @@ public sealed class MailClient : IDisposable
 {
     public const string DefaultBase = "https://secupgrade.com/apicalls";
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(3);
-    internal const int MaxAttempts = 4;
+    internal const int MaxAttempts = HttpRetry.MaxAttempts;
     private readonly HttpClient _http;
     private readonly Uri _baseUri;
     private readonly bool _ownsHttp;
@@ -53,27 +53,8 @@ public sealed class MailClient : IDisposable
         }, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Run a request that is safe to repeat. A failed connection or a timeout (the network is flaky, not the answer) is retried up to
-    /// <see cref="MaxAttempts"/> times; anything the server actually answered, even with an error, is final.
-    /// </summary>
-    private static async Task<T> WithRetryAsync<T>(Func<Task<T>> operation, CancellationToken cancellationToken)
-    {
-        for (var attempt = 1; ; attempt++)
-        {
-            try
-            {
-                return await operation().ConfigureAwait(false);
-            }
-            catch (Exception ex) when (attempt < MaxAttempts && !cancellationToken.IsCancellationRequested && IsTransient(ex))
-            {
-                await Task.Delay(200 * attempt, cancellationToken).ConfigureAwait(false);
-            }
-        }
-    }
-
-    private static bool IsTransient(Exception ex) =>
-        ex is HttpRequestException { StatusCode: null } || ex is TaskCanceledException { InnerException: TimeoutException } || ex is TimeoutException;
+    private static Task<T> WithRetryAsync<T>(Func<Task<T>> operation, CancellationToken cancellationToken) =>
+        HttpRetry.RunAsync(operation, cancellationToken);
 
     public async Task<MailIdentityBundle> LookupAsync(string shortId,
         CancellationToken cancellationToken = default)
@@ -113,21 +94,8 @@ public sealed class MailClient : IDisposable
         try { (address, pin) = MailEndpoint.Secure(recipient.Endpoint); }
         catch (FormatException ex) { throw new MailServiceException(ex.Message, null, ex); }
 
-        // A client of its own for each delivery: TLS 1.3 only, and the ONLY thing it checks is that the server holds the key the recipient
-        // published. The certificate chain and host name mean nothing for a device on a LAN address; the pin is the whole trust decision.
-        using var handler = new SocketsHttpHandler
-        {
-            UseProxy = false,                // a device on the LAN is reached directly, never through a proxy
-            AllowAutoRedirect = false,
-            ConnectTimeout = TimeSpan.FromSeconds(10),
-            SslOptions = new System.Net.Security.SslClientAuthenticationOptions
-            {
-                EnabledSslProtocols = System.Security.Authentication.SslProtocols.Tls13,
-                CertificateRevocationCheckMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.NoCheck,
-                RemoteCertificateValidationCallback = (_, certificate, _, _) => MailTls.PinMatches(certificate, pin)
-            }
-        };
-        using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30), MaxResponseContentBufferSize = 64 * 1024 };
+        // A client of its own for each delivery, pinned to the key the recipient published (see PinnedHttp)
+        using var http = PinnedHttp.Create(pin, TimeSpan.FromSeconds(30), 64 * 1024);
 
         using var response = await PostJsonAsync(http, new Uri(address, MailEndpoint.Path),
             new

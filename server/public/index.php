@@ -6,6 +6,7 @@ use Kickl\Registry\CaGateway;
 use Kickl\Registry\RateLimit;
 use Kickl\Registry\Config;
 use Kickl\Registry\Db;
+use Kickl\Registry\GameCardStore;
 use Kickl\Registry\MailConflictException;
 use Kickl\Registry\MailIdentityStore;
 use Kickl\Registry\RegistryStore;
@@ -31,6 +32,7 @@ require $appRoot . '/src/Db.php';
 require $appRoot . '/src/Signer.php';
 require $appRoot . '/src/RegistryStore.php';
 require $appRoot . '/src/MailIdentityStore.php';
+require $appRoot . '/src/GameCardStore.php';
 require $appRoot . '/src/CaGateway.php';
 require $appRoot . '/src/RateLimit.php';
 
@@ -56,6 +58,11 @@ try {
                     'GET /v1/ca/root',
                     'GET /v1/ca/revocations',
                     'POST /v1/ca/countersign',
+                    'GET /v1/games?since=N',
+                    'POST /v1/games/card',
+                    'POST /v1/games/remove',
+                    'POST /v1/games/source',
+                    'GET /v1/games/sources?sha256=H',
                 ],
             ]);
 
@@ -137,6 +144,30 @@ try {
         case $path === '/v1/ca/countersign':
             respond(405, ['error' => 'Use POST.']);
 
+        // ---- the game directory: signed cards, and the computers that can serve each game (never the game files themselves)
+        case $method === 'GET' && $path === '/v1/games':
+            RateLimit::enforce('games-list', 120, 600);
+            respond(200, GameCardStore::list(Db::connect(), max(0, (int) ($_GET['since'] ?? 0)), (int) ($_GET['limit'] ?? 100)));
+
+        case $method === 'POST' && $path === '/v1/games/card':
+            RateLimit::enforce('games-publish', 12, 3600);
+            respond(201, GameCardStore::publish(Db::connect(), readJsonBody()));
+
+        case $method === 'POST' && $path === '/v1/games/remove':
+            RateLimit::enforce('games-remove', 30, 3600);
+            respond(200, GameCardStore::remove(Db::connect(), readJsonBody(), isAdmin()));
+
+        case $method === 'POST' && $path === '/v1/games/source':
+            RateLimit::enforce('games-source', 120, 3600);
+            respond(200, GameCardStore::announce(Db::connect(), readJsonBody(), (string) ($_SERVER['REMOTE_ADDR'] ?? '')));
+
+        case $method === 'GET' && $path === '/v1/games/sources':
+            RateLimit::enforce('games-sources', 240, 600);
+            respond(200, GameCardStore::sources(Db::connect(), (string) ($_GET['sha256'] ?? '')));
+
+        case str_starts_with($path, '/v1/games') && !in_array($method, ['GET', 'POST'], true):
+            respond(405, ['error' => 'Use GET or POST.']);
+
         default:
             respond(404, ['error' => 'Unknown endpoint.']);
     }
@@ -158,6 +189,13 @@ function respond(int $status, array $body): never
     echo json_encode($body, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
         | JSON_THROW_ON_ERROR);
     exit;
+}
+
+/** True when the request carries the operator's admin token (used to let the operator remove any game card). */
+function isAdmin(): bool
+{
+    $token = Config::adminToken();
+    return $token !== '' && hash_equals($token, (string) ($_SERVER['HTTP_X_KICKL_ADMIN'] ?? ''));
 }
 
 function requireAdmin(): void

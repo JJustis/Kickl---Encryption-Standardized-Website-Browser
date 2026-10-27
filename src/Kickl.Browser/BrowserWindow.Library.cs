@@ -25,7 +25,8 @@ public sealed partial class BrowserWindow
         panel.Children.Add(T(game.Title, 13, Text, bold: true));
         panel.Children.Add(T(broken ? game.Error! : game.Tagline, 9.5, broken ? Red : Muted).WithWrap());
         panel.Children.Add(T(broken ? "CANNOT RUN" : $"PLAYABLE · wasm sandbox · {Math.Max(1, game.Bytes / 1024)} KB", 8.5, broken ? Red : game.Accent, mono: true));
-        panel.Children.Add(T("@" + game.Author, 8.5, Muted, mono: true));
+        panel.Children.Add(T("@" + game.Author + (game.Card is not null ? "  ·  shared" : ""), 8.5, Muted, mono: true));
+        if (PublishButton(game) is { } share) panel.Children.Add(share);
 
         var card = new Border
         {

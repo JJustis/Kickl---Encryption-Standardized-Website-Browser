@@ -25,4 +25,8 @@ A game runs in the same sandbox, with the same limits, as a game on a page (no n
 10 million instructions a frame). If a game cannot run, its card says why. Check a game before you drop it in with
 `kickl game-check game.wasm`, and see what the browser found with `kickl games`.
 
+**Sharing.** A game you put in your own games folder can be shared with everyone: press **SHARE THIS GAME** on its card in the arcade (or `kickl games publish <id>`).
+Other computers then see a dimmed **DOWNLOAD** card for it, and clicking it downloads the game from you, or from anyone who has already downloaded it, after checking it against
+your signature. Games you download land in your own games folder and are served onward. See [`docs/28-game-sharing.md`](../docs/28-game-sharing.md).
+
 How to write one: [`docs/26-game-tutorial.md`](../docs/26-game-tutorial.md). The compiled games in `examples/games/build` are installed here by `npm run build`.

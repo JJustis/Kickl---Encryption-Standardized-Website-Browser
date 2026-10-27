@@ -6,7 +6,7 @@ namespace Kickl.Core.Games;
 /// <summary>One game found in a games folder.</summary>
 public sealed record GameEntry(
     string Id, string Title, string Tagline, string Author, string Accent, int Order,
-    string WasmPath, long Bytes, string Folder, string? Error);
+    string WasmPath, long Bytes, string Folder, string? Error, GameCard? Card = null);
 
 /// <summary>
 /// The games folders. A game is a folder named for its id, holding <c>game.wasm</c> and, optionally, <c>game.json</c>:
@@ -21,7 +21,7 @@ public static partial class GameLibrary
     public const string FolderName = "games";
     public const string WasmFile = "game.wasm";
     public const string MetaFile = "game.json";
-    private const int MaxMetaBytes = 4096;
+    private const int MaxMetaBytes = 16 * 1024;   // a few hundred bytes of text, plus a signed card (about 8 KB) when the game came from the registry
     private const int MaxGames = 200;
 
     [GeneratedRegex("^[a-z0-9][a-z0-9-]{0,39}$")]
@@ -77,6 +77,7 @@ public static partial class GameLibrary
         var size = new FileInfo(wasm).Length;
         string title = Titleize(id), tagline = "a WebAssembly game", author = "local", accent = Palette[id.Sum(c => (int) c) % Palette.Length];   // a stable pick: string.GetHashCode changes on every run
         var order = 100;
+        GameCard? card = null;
 
         var metaPath = Path.Combine(folder, MetaFile);
         if (File.Exists(metaPath) && new FileInfo(metaPath).Length <= MaxMetaBytes)
@@ -90,6 +91,8 @@ public static partial class GameLibrary
                     tagline = Text(doc.RootElement, "tagline", 90) ?? tagline;
                     author = Text(doc.RootElement, "author", 24) ?? author;
                     if (Text(doc.RootElement, "accent", 7) is { } color && ColorPattern().IsMatch(color)) accent = color;
+                    // A game that came from the registry keeps its signed card beside it (see Install); it is unverified until used
+                    if (doc.RootElement.TryGetProperty("card", out var c) && c.ValueKind == JsonValueKind.Object) card = GameCard.FromElement(c);
                     if (doc.RootElement.TryGetProperty("order", out var o) && o.ValueKind == JsonValueKind.Number && o.TryGetInt32(out var n))
                         order = Math.Clamp(n, -1000, 1000);
                 }
@@ -104,7 +107,7 @@ public static partial class GameLibrary
         if (size == 0) error = "game.wasm is empty.";
         else if (size > limits.MaxModuleBytes)
             error = $"game.wasm is {size / 1024:N0} KB; the limit here is {limits.MaxModuleBytes / 1024:N0} KB.";
-        return new GameEntry(id, title, tagline, author, accent, order, wasm, size, folder, error);
+        return new GameEntry(id, title, tagline, author, accent, order, wasm, size, folder, error, card);
     }
 
     private static string? Text(JsonElement obj, string name, int max)
@@ -117,6 +120,72 @@ public static partial class GameLibrary
 
     private static string Titleize(string id) =>
         string.Join(' ', id.Split('-', StringSplitOptions.RemoveEmptyEntries).Select(w => char.ToUpperInvariant(w[0]) + w[1..]));
+
+    private static readonly Dictionary<string, (long Size, long Ticks, string Sha)> HashCache = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The SHA-256 of a game's file, remembered until the file changes (the home page asks for it often).</summary>
+    public static string Sha256Of(GameEntry game)
+    {
+        var info = new FileInfo(game.WasmPath);
+        lock (HashCache)
+        {
+            if (HashCache.TryGetValue(game.WasmPath, out var hit) && hit.Size == info.Length && hit.Ticks == info.LastWriteTimeUtc.Ticks) return hit.Sha;
+            using var stream = info.OpenRead();
+            var sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream)).ToLowerInvariant();
+            HashCache[game.WasmPath] = (info.Length, info.LastWriteTimeUtc.Ticks, sha);
+            return sha;
+        }
+    }
+
+    /// <summary>Which of these games has exactly this file? Games with an error are never offered.</summary>
+    public static GameEntry? FindBySha(IEnumerable<GameEntry> games, string sha) =>
+        games.Where(g => g.Error is null && g.Bytes <= GameCard.MaxGameBytes)
+             .FirstOrDefault(g => string.Equals(Sha256Of(g), sha, StringComparison.Ordinal));
+
+    /// <summary>
+    /// Put a downloaded game in the reader's own games folder. The card must be genuine and the bytes must be exactly what it names, and the
+    /// module must load in the sandbox (no imports, valid), before anything is written. A game that is already there from the same publisher is
+    /// replaced (an update); a different game with the same id gets a folder name made from the id and the publisher.
+    /// </summary>
+    public static GameEntry Install(string gamesRoot, GameCard card, byte[] wasm, GameLimits? limits = null)
+    {
+        limits ??= GameLimits.Unclaimed;
+        if (!card.TryVerify(out var reason)) throw new GameCardException("This card is not genuine: " + reason);
+        if (!card.Matches(wasm)) throw new GameCardException("The downloaded file is not the one the card names.");
+        if (wasm.Length > limits.MaxModuleBytes)
+            throw new GameRejectedException($"The game is {wasm.Length / 1024:N0} KB; the limit here is {limits.MaxModuleBytes / 1024:N0} KB.");
+        using (WasmGame.Load(wasm, limits)) { }   // refuses a module with imports or that is not valid WebAssembly
+
+        Directory.CreateDirectory(gamesRoot);
+        var folder = ChooseFolder(gamesRoot, card);
+        var target = Path.Combine(gamesRoot, folder);
+        Directory.CreateDirectory(target);
+
+        var temp = Path.Combine(target, WasmFile + ".part");
+        File.WriteAllBytes(temp, wasm);
+        File.Move(temp, Path.Combine(target, WasmFile), overwrite: true);
+
+        var kept = GameCard.TryParse(card.ToJson())!;
+        kept.Sources = 0;
+        var meta = new Dictionary<string, object?>
+        {
+            ["title"] = card.Title, ["tagline"] = card.Tagline, ["author"] = card.Author, ["accent"] = card.Accent, ["order"] = 200,
+            ["card"] = JsonSerializer.Deserialize<JsonElement>(kept.ToJson())
+        };
+        File.WriteAllText(Path.Combine(target, MetaFile), JsonSerializer.Serialize(meta, new JsonSerializerOptions { WriteIndented = true }));
+        return Scan([gamesRoot], limits).First(g => g.Id == folder);
+    }
+
+    private static string ChooseFolder(string gamesRoot, GameCard card)
+    {
+        // the same publisher's game of that id: reuse its folder, so a new version replaces the old
+        foreach (var existing in Scan([gamesRoot]))
+            if (existing.Card is { } c && c.PublisherId == card.PublisherId && c.Id == card.Id) return existing.Id;
+        var plain = Path.Combine(gamesRoot, card.Id);
+        if (!Directory.Exists(plain)) return card.Id;
+        var suffixed = (card.Id.Length > 31 ? card.Id[..31] : card.Id).TrimEnd('-') + "-" + card.PublisherId[..8];
+        return suffixed;
+    }
 
     /// <summary>Read a listed game's module for play. Refuses a game that was listed with an error, or that changed size since.</summary>
     public static byte[] ReadModule(GameEntry game, GameLimits? limits = null)

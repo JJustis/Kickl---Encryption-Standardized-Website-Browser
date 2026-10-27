@@ -1089,6 +1089,9 @@ Kickl Browser � slice CLI
   kickl registry  status [--data DIR]
   kickl demo      [--dir DIR]
   kickl games      [--dir DIR] [--data DIR]
+  kickl games remote  --pin PIN [--registry URL] [--data DIR]       list the games the registry knows
+  kickl games publish <id> --pin PIN [--serve] [--registry URL] [--data DIR]  share one of your games
+  kickl games fetch   <id> --pin PIN [--registry URL] [--data DIR]  download a game you do not have
   kickl game-check <game.wasm> [--script STEPS] [--seed N] [--claimed] [--png FILE] [--scale N]
   kickl shell     [--data DIR]
 
@@ -1161,6 +1164,8 @@ jttp:// names resolve through the local registry mirror; they never touch HTTP.
     private static int GamesCommand(string[] args)
     {
         var opts = Options.Parse(args);
+        if (opts.Positional.Count > 0 && opts.Positional[0].ToLowerInvariant() is "remote" or "publish" or "fetch")
+            return GamesShareCommand(opts);
         IReadOnlyList<string> roots = opts.Get("dir") is { Length: > 0 } dir
             ? [Path.GetFullPath(dir)]
             : Kickl.Core.Games.GameLibrary.DefaultRoots(DataDir(opts));
@@ -1176,6 +1181,73 @@ jttp:// names resolve through the local registry mirror; they never touch HTTP.
             Console.WriteLine($"{"",-22} {(game.Error is null ? "ok" : "CANNOT RUN: " + game.Error)}   {game.Folder}");
         }
         return games.Any(g => g.Error is not null) ? 3 : 0;
+    }
+
+    /// <summary>The registry side of games: see what is shared, share one of yours, or download one. Run against any registry with --registry.</summary>
+    private static int GamesShareCommand(Options opts)
+    {
+        var verb = opts.Positional[0].ToLowerInvariant();
+        var pin = opts.Get("pin");
+        if (string.IsNullOrEmpty(pin)) { Error($"kickl games {verb} needs --pin (your profile's user key)"); return 1; }
+
+        using var session = new BrowserSession(DataDir(opts));
+        session.Unlock(pin);
+        using var registry = new Kickl.Core.Games.GameRegistryClient(opts.Get("registry"));
+        using var sharing = new Kickl.Core.Games.GameSharing(session, registry);
+        var library = () => Kickl.Core.Games.GameLibrary.Scan(Kickl.Core.Games.GameLibrary.DefaultRoots(DataDir(opts)));
+
+        try
+        {
+            if (verb == "remote")
+            {
+                var changed = sharing.RefreshAsync().GetAwaiter().GetResult();
+                var missing = sharing.Missing(library()).Select(m => m.Card.Sha256).ToHashSet();
+                Console.WriteLine($"{sharing.Cards.Count} game(s) in the registry ({changed} new or changed):");
+                foreach (var card in sharing.Cards)
+                    Console.WriteLine($"  {card.PublisherShort}/{card.Id,-20} {card.Title}  ·  @{card.Author}  ·  v{card.Version}  ·  {card.Size:N0} bytes  ·  {card.Sources} source(s)  ·  {(missing.Contains(card.Sha256) ? "not on this computer" : "have it")}");
+                return 0;
+            }
+
+            var wanted = opts.Positional.Count > 1 ? opts.Positional[1].ToLowerInvariant() : "";
+            if (wanted.Length == 0) { Error($"kickl games {verb} needs a game id"); return 1; }
+
+            if (verb == "publish")
+            {
+                var entry = library().FirstOrDefault(g => g.Id == wanted);
+                if (entry is null) { Error($"no game '{wanted}' in the games folders (see `kickl games`)"); return 1; }
+                sharing.StartSeeding(library);
+                var card = sharing.PublishAsync(entry).GetAwaiter().GetResult();
+                Console.WriteLine($"published {card.Title} (version {card.Version}) as {card.PublisherShort}/{card.Id}");
+                Console.WriteLine(sharing.SeedEndpoint is null
+                    ? "this computer is not serving it (could not start); others cannot download it until it is"
+                    : "this computer will serve it while the browser is running: " + sharing.SeedEndpoint);
+                if (opts.Has("serve") && sharing.SeedEndpoint is not null)
+                {
+                    // keep serving (and announcing) until Ctrl+C, so another computer can download it from here
+                    Console.WriteLine("serving; press Ctrl+C to stop");
+                    using var stop = new CancellationTokenSource();
+                    Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.Cancel(); };
+                    try { Task.Delay(Timeout.Infinite, stop.Token).GetAwaiter().GetResult(); } catch (OperationCanceledException) { }
+                }
+                return 0;
+            }
+
+            // fetch: "<publisher8>/<id>" or just "<id>"
+            sharing.RefreshAsync().GetAwaiter().GetResult();
+            var parts = wanted.Split('/');
+            var match = sharing.Cards.FirstOrDefault(c => parts.Length == 2
+                ? c.PublisherShort == parts[0] && c.Id == parts[1] : c.Id == parts[0]);
+            if (match is null) { Error($"the registry has no game '{wanted}' (see `kickl games remote`)"); return 1; }
+            var installed = sharing.DownloadAsync(match, Console.WriteLine).GetAwaiter().GetResult();
+            Console.WriteLine($"installed {installed.Title} in {installed.Folder}");
+            return 0;
+        }
+        catch (Exception ex) when (ex is Kickl.Core.Games.GameRegistryException or Kickl.Core.Games.GameCardException
+                                       or Kickl.Core.Games.GameRejectedException or HttpRequestException)
+        {
+            Error(ex.Message);
+            return 2;
+        }
     }
 
     private static int Unknown(string command)

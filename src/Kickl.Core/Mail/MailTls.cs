@@ -62,6 +62,12 @@ public static class MailEndpoint
 {
     public const string Path = "/v1/mail/deliver";
 
+    /// <summary>This computer's LAN address on a chosen port, without a pin yet.</summary>
+    public static string LocalBaseOn(int port) => $"https://{LocalAddress()}:{port}";
+
+    /// <summary>A TCP port nothing is listening on right now.</summary>
+    public static int PickFreePort() => FreePort();
+
     /// <summary>The LAN address and a free port, without a pin yet. A device behind NAT must forward the port or publish its public host.</summary>
     public static string LocalBase() => $"https://{LocalAddress()}:{FreePort()}";
 

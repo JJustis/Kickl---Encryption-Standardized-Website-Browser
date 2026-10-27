@@ -108,7 +108,9 @@ the CA and claiming names are optional. **Full instructions, requirements and tr
   file that opens with an access key the seller sends after payment. Try `jttp://btcshop.com` (testnet). See `docs/27-shop-syntax.md`.
 - **Games** are sealed WebAssembly modules run in a capability-free sandbox (no imports, fuel-metered, memory-capped);
   try `jttp://game-lab.custom`, or `jttp://caverns.custom`, a first-person 3D maze game in 15 KB. **The home page's arcade lists every game in the `games/`
-  folder**: add a game by putting a folder with a `game.wasm` there (see `games/README.md`). To write your own, follow the step-by-step tutorial in
+  folder**: add a game by putting a folder with a `game.wasm` there (see `games/README.md`). **Games spread between computers:** share one of yours and every other
+  computer running Kickl shows a dimmed DOWNLOAD card for it; clicking it (after a prompt) downloads the game from you or from anyone who already has it, checked against
+  your signature. The registry stores only the signed cards, never the games (`docs/28-game-sharing.md`). To write your own, follow the step-by-step tutorial in
   `docs/26-game-tutorial.md` (code in `examples/games/`); `kickl game-check` measures a game against the budget and `kickl games` shows what the browser found.
   Reference: `docs/22-wasm-games.md`.
 - **Public and protected content.** Page text and public blobs are encrypted at rest but open to every reader;
@@ -167,6 +169,7 @@ page), `artifacts/sealed-inline.png` (inline SVG with a click-to-unlock sealed i
 | 24 | [`docs/23-certificate-authority.md`](docs/23-certificate-authority.md) | The Kickl CA, seals, transparency log, owner binding | security / backend |
 | 25 | [`docs/24-security-audit.md`](docs/24-security-audit.md) | In-house security audit: findings, fixes, and what is still open | security |
 | 28 | [`docs/26-game-tutorial.md`](docs/26-game-tutorial.md) | Tutorial: build a WebAssembly game, from a gradient to a 3D maze, and test and publish it | everyone |
+| 29 | [`docs/28-game-sharing.md`](docs/28-game-sharing.md) | Share games between computers: signed cards in the registry, downloads from the publisher or any mirror | everyone / backend |
 | 27 | [`docs/27-shop-syntax.md`](docs/27-shop-syntax.md) | The `<shop>` syntax: sell products for Bitcoin from a page | sellers / engineering |
 | 26 | [`docs/25-doc-review.md`](docs/25-doc-review.md) | Which documents were re-read against the code, and their status | everyone |
 | — | [`CHECKLIST.md`](CHECKLIST.md) | **Tickable master checklist** — one line per deliverable | everyone |

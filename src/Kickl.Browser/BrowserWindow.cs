@@ -247,6 +247,7 @@ public sealed partial class BrowserWindow : Window
         _confirmOverlay = BuildConfirmOverlay();
         _shieldOverlay = BuildShieldOverlay();
         _claimOverlay = BuildClaimOverlay();
+        _gameOverlay = BuildGameOverlay();
         _lockOverlay = BuildLockOverlay();
         _chatOverlay = BuildChatOverlay();
         _mailOverlay = BuildMailOverlay();
@@ -538,6 +539,7 @@ public sealed partial class BrowserWindow : Window
         surface.Children.Add(_confirmOverlay);
         surface.Children.Add(_shieldOverlay);
         surface.Children.Add(_claimOverlay);
+        surface.Children.Add(_gameOverlay);
         surface.Children.Add(_chatOverlay);
         surface.Children.Add(_mailOverlay);
         surface.Children.Add(_lockOverlay);
@@ -2859,6 +2861,7 @@ public sealed partial class BrowserWindow : Window
 
     private void LockSession()
     {
+        StopSharing();
         CloseChat();
         _mail?.Lock();
         _mailOverlay.IsVisible = false;
@@ -4084,7 +4087,13 @@ public sealed partial class BrowserWindow : Window
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         header.Children.Add(T("ARCADE", 12, Accent, mono: true, bold: true));
         var library = LibraryGames();
-        var count = T($"{library.Count + HomeGames.Length} games", 9, Muted, mono: true);
+        if (_session.IsUnlocked)
+        {
+            EnsureSharing();
+            _remoteGames = _sharing?.Missing(library) ?? [];
+            RefreshArcadeSoon();
+        }
+        var count = T($"{library.Count + _remoteGames.Count + HomeGames.Length} games", 9, Muted, mono: true);
         count.HorizontalAlignment = HorizontalAlignment.Right;
         header.Children.Add(count);
         Grid.SetColumn(count, 1);
@@ -4094,6 +4103,7 @@ public sealed partial class BrowserWindow : Window
             "Every game in the games folder is listed here and runs in its own sandbox: no network, no files, no clock. Drop a folder into games/ to add one.",
             10, Muted).WithWrap());
 
+        if (_session.IsUnlocked) panel.Children.Add(SharingBar());
         var cards = new WrapPanel
         {
             Orientation = Orientation.Horizontal,
@@ -4102,6 +4112,8 @@ public sealed partial class BrowserWindow : Window
         };
         foreach (var game in library)
             cards.Children.Add(LibraryCard(game));
+        foreach (var remote in _remoteGames)
+            cards.Children.Add(RemoteCard(remote));
         foreach (var game in HomeGames)
             cards.Children.Add(GameCard(game));
         panel.Children.Add(cards);
@@ -5700,6 +5712,7 @@ public sealed partial class BrowserWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         StopAllGames();
+        StopSharing();
         foreach (var tab in _tabs) ClearImages(tab);
         _http.Dispose();
         _mail?.Dispose();

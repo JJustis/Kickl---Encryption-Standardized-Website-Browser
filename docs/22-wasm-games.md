@@ -53,7 +53,8 @@ A trap or limit halts only that game. Nothing it does reaches the host.
 
 A game does not have to live on a page. Put a folder with a `game.wasm` (and an optional `game.json`) in `games/`, in a `games` folder in your data folder, or in
 one beside the program, and the browser lists it on its home page. It runs with the limits of an unclaimed name, with its save kept per game in the reader's profile.
-See `games/README.md` and `docs/26-game-tutorial.md` §8.1. The rest of this document applies unchanged.
+See `games/README.md` and `docs/26-game-tutorial.md` §8.1. A game in your own folder can be **shared**: other computers see its card in the arcade and download it from yours or from
+any mirror (`docs/28-game-sharing.md`). The rest of this document applies unchanged.
 
 ## 4. Putting a game on a page
 

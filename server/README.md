@@ -36,6 +36,7 @@ C:/xampp/php/php.exe server/bin/migrate.php
 #   mysql -u root -e "CREATE DATABASE IF NOT EXISTS kickl_registry"
 #   mysql -u root kickl_registry < server/migrations/001_init.sql
 #   mysql -u root kickl_registry < server/migrations/002_mail_identity.sql
+#   mysql -u root kickl_registry < server/migrations/003_game_cards.sql      (the game directory)
 
 # 5. Serve the API locally.
 C:/xampp/php/php.exe -S 127.0.0.1:8099 -t server/public server/public/index.php
@@ -111,6 +112,12 @@ Mail is a directory here, not a mailbox. The API stores no mail messages; the se
 sealed PNG directly to the endpoint in the recipient's bundle (`/v1/mail/deliver`), over TLS 1.3 pinned to the
 recipient's own key. The recipient keeps messages in its local SQLite vault. Registration accepts only an endpoint of
 the form `https://host:port#pin=<43-character base64url key pin>`; plain-http or unpinned endpoints are refused.
+
+### The game directory
+
+`GET /v1/games`, `POST /v1/games/card`, `POST /v1/games/remove`, `POST /v1/games/source`, `GET /v1/games/sources` store signed game **cards** and the list of computers that
+can serve each game. The registry holds no game files. Tables: `migrations/003_game_cards.sql`; code: `src/GameCardStore.php`; design and limits: `docs/28-game-sharing.md`.
+An operator can remove any card with the admin token (`POST /v1/games/remove` with `X-Kickl-Admin`).
 
 ### Rate limits
 
