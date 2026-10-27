@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Kickl\Registry\CaGateway;
 use Kickl\Registry\Config;
 use Kickl\Registry\Db;
 use Kickl\Registry\MailConflictException;
@@ -29,6 +30,7 @@ require $appRoot . '/src/Db.php';
 require $appRoot . '/src/Signer.php';
 require $appRoot . '/src/RegistryStore.php';
 require $appRoot . '/src/MailIdentityStore.php';
+require $appRoot . '/src/CaGateway.php';
 
 $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
 $path = Config::requestPath();
@@ -47,6 +49,9 @@ try {
                     'POST /v1/registry/register',
                     'POST /v1/mail/identity',
                     'GET /v1/mail/lookup?short=NNNNNNNN',
+                    'GET /v1/ca/root',
+                    'GET /v1/ca/revocations',
+                    'POST /v1/ca/countersign',
                 ],
             ]);
 
@@ -110,6 +115,19 @@ try {
                 respond(404, ['error' => 'No mail identity has that PFS id.']);
             }
             respond(200, $identity);
+
+        case $method === 'GET' && $path === '/v1/ca/root':
+            respond(200, CaGateway::root());
+
+        case $method === 'GET' && $path === '/v1/ca/revocations':
+            respond(200, CaGateway::revocations());
+
+        case $method === 'POST' && $path === '/v1/ca/countersign':
+            [$caStatus, $caBody] = CaGateway::countersign((string) file_get_contents('php://input'));
+            respond($caStatus, $caBody);
+
+        case $path === '/v1/ca/countersign':
+            respond(405, ['error' => 'Use POST.']);
 
         default:
             respond(404, ['error' => 'Unknown endpoint.']);

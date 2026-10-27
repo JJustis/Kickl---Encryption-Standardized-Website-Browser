@@ -7,6 +7,7 @@
     <Project Path="src/Kickl.DongleReceiver/Kickl.DongleReceiver.csproj" />
   </Folder>
   <Folder Name="/tools/">
+    <Project Path="tools/Kickl.Ca/Kickl.Ca.csproj" />
     <Project Path="tools/Kickl.RegistrySigner/Kickl.RegistrySigner.csproj" />
   </Folder>
   <Folder Name="/tests/">

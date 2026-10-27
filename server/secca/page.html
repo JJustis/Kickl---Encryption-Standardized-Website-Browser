@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kickl CA</title>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--fg:#c9d1d9;--dim:#7d8590;--line:#30363d;--acc:#58a6ff;--ok:#3fb950;--bad:#f85149;--warn:#d29922}
+@media(prefers-color-scheme:light){:root{--bg:#fff;--card:#f6f8fa;--fg:#1f2328;--dim:#656d76;--line:#d0d7de;--acc:#0969da;--ok:#1a7f37;--bad:#cf222e;--warn:#9a6700}}
+*{box-sizing:border-box}
+body{margin:0;padding:1.5rem 1rem 4rem;background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,Segoe UI,sans-serif}
+main{max-width:860px;margin:auto}
+h1{font-size:1.5rem;margin:0 0 .2rem}
+h2{font-size:1.05rem;margin:0 0 .5rem}
+.sub{color:var(--dim);margin:0 0 1.4rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:1rem 1.2rem;margin-bottom:1rem}
+.mono{font:13px/1.5 ui-monospace,Consolas,monospace;word-break:break-all}
+.dim{color:var(--dim)}
+.row{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center}
+button{font:inherit;cursor:pointer;background:var(--acc);color:#fff;border:0;border-radius:6px;padding:.4rem .9rem}
+button.s{background:transparent;color:var(--fg);border:1px solid var(--line)}
+button:disabled{opacity:.5;cursor:default}
+input[type=text]{font:inherit;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:.4rem .6rem;min-width:16rem}
+.drop{border:2px dashed var(--line);border-radius:8px;padding:1.4rem;text-align:center;color:var(--dim);cursor:pointer}
+.drop.over{border-color:var(--acc);color:var(--fg)}
+.say{margin-top:.8rem;padding:.6rem .8rem;border-left:3px solid var(--line);background:var(--bg);border-radius:0 6px 6px 0}
+.say.ok{border-color:var(--ok)} .say.bad{border-color:var(--bad)} .say.warn{border-color:var(--warn)}
+.pill{display:inline-block;padding:.05rem .55rem;border-radius:99px;font-size:.78rem;border:1px solid var(--line)}
+.pill.ok{color:var(--ok);border-color:var(--ok)} .pill.bad{color:var(--bad);border-color:var(--bad)}
+table{width:100%;border-collapse:collapse;font-size:.88rem}
+th,td{text-align:left;padding:.3rem .5rem;border-bottom:1px solid var(--line)}
+th{color:var(--dim);font-weight:500}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:.8rem}
+ol{margin:.3rem 0 0;padding-left:1.2rem;color:var(--dim)}
+</style>
+</head>
+<body><main>
+<h1>Kickl Certificate Authority</h1>
+<p class="sub">Watches ownership certificates for jttp:// names. Nothing here is done by hand: the CA checks, seals and logs every certificate automatically, and the whole log is public.</p>
+
+<div class="card">
+  <h2>Get your certificate sealed</h2>
+  <ol>
+    <li>Buy a name at the BTC shop and download your ownership certificate (<span class="mono">.kcert</span>).</li>
+    <li>Drop it below. The CA verifies the shop's signature, makes sure no other claim clashes, and writes it to its log.</li>
+    <li>Download the sealed certificate. Import it in the Kickl Browser and your site shows <b>VERIFIED OWNER</b> to every visitor.</li>
+  </ol>
+  <div class="drop" id="drop" tabindex="0">Drop your .kcert file here, or click to choose it</div>
+  <input type="file" id="file" accept=".kcert,.json,application/json" hidden>
+  <div class="say" id="sealSay" hidden></div>
+  <div class="row" style="margin-top:.7rem"><button id="dl" hidden>Download sealed certificate</button></div>
+  <p class="dim" style="font-size:.85rem;margin-bottom:0">Your certificate contains a secret. It travels to this page over HTTPS only for sealing; the CA keeps just a hash of the secret, never the secret itself. The Kickl Browser can also do this for you with <b>SEND TO CA</b>.</p>
+</div>
+
+<div class="card">
+  <h2>Check a site</h2>
+  <div class="row">
+    <input type="text" id="site" placeholder="jttp://mysite.com" autocomplete="off" spellcheck="false">
+    <button id="look">Look up</button>
+  </div>
+  <div class="say" id="lookSay" hidden></div>
+</div>
+
+<div class="grid">
+  <div class="card"><h2>Trust anchor</h2><div id="anchor" class="dim">loading…</div></div>
+  <div class="card"><h2>Transparency log</h2><div id="head" class="dim">loading…</div></div>
+</div>
+
+<div class="card">
+  <h2>Everything the CA has sealed</h2>
+  <p class="dim" style="margin-top:0">Newest first. Each entry is a leaf in an append-only Merkle log; anyone can re-check it. Entries hold no secrets.</p>
+  <div style="overflow-x:auto"><table><thead><tr><th>#</th><th>Site</th><th>Claim</th><th>Sealed</th><th>Valid until</th></tr></thead><tbody id="rows"></tbody></table></div>
+  <p class="dim" id="more" style="margin-bottom:0"></p>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const BASE = location.pathname.replace(/[^/]*$/, '');
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const when = t => t ? new Date(t * 1000).toLocaleString() : '—';
+const day = t => t ? new Date(t * 1000).toLocaleDateString() : '—';
+function say(el, html, cls){ el.hidden = false; el.className = 'say ' + (cls || ''); el.innerHTML = html; }
+
+// ---- seal a certificate -------------------------------------------------------------------
+let sealedBlob = null, sealedName = '';
+async function seal(text){
+  $('dl').hidden = true; sealedBlob = null;
+  let receipt;
+  try { receipt = JSON.parse(text); } catch { return say($('sealSay'), 'That file is not a certificate (it is not valid JSON).', 'bad'); }
+  if (!receipt || receipt.kickl !== 'ownership-cert') return say($('sealSay'), 'That is not a Kickl ownership certificate.', 'bad');
+  say($('sealSay'), 'Checking with the CA…');
+  let r, j;
+  try { r = await fetch(BASE + 'v1/ca/countersign', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(receipt)}); j = await r.json(); }
+  catch { return say($('sealSay'), 'Could not reach the CA. Try again in a moment.', 'bad'); }
+  if (!r.ok) return say($('sealSay'), '<b>The CA refused this certificate.</b> ' + esc(j.message || j.error || 'Unknown reason.'), r.status === 429 ? 'warn' : 'bad');
+  const s = j.seal;
+  receipt.seal = s;
+  sealedName = 'jttp-owner-' + receipt.site + '.kcert';
+  sealedBlob = new Blob([JSON.stringify(receipt, null, 2)], {type:'application/json'});
+  say($('sealSay'), '<b>Sealed.</b> jttp://' + esc(s.site) + ' claim #' + s.seq + ' is entry ' + s.logIndex + ' of ' + s.treeSize + ' in the CA log. Download the sealed certificate and import it in the Kickl Browser.', 'ok');
+  $('dl').hidden = false;
+  refresh();
+}
+$('dl').onclick = () => {
+  if (!sealedBlob) return;
+  const a = document.createElement('a'); a.href = URL.createObjectURL(sealedBlob); a.download = sealedName;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+};
+const readFile = f => f && f.size < 16384 ? f.text().then(seal) : say($('sealSay'), 'That file is too large to be a certificate.', 'bad');
+$('drop').onclick = () => $('file').click();
+$('drop').onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') $('file').click(); };
+$('file').onchange = e => readFile(e.target.files[0]);
+['dragover','dragenter'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.add('over'); }));
+['dragleave','drop'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.remove('over'); }));
+$('drop').addEventListener('drop', e => readFile(e.dataTransfer.files[0]));
+
+// ---- look up a site -----------------------------------------------------------------------
+async function look(){
+  const r = await fetch(BASE + 'api/lookup?site=' + encodeURIComponent($('site').value));
+  const j = await r.json();
+  if (!r.ok) return say($('lookSay'), esc(j.message || 'Something went wrong.'), 'bad');
+  if (!j.entries.length) return say($('lookSay'), 'jttp://' + esc(j.site) + ' has <b>no seal</b>. Either nobody has claimed it, or the owner has not had their certificate sealed.', 'warn');
+  const latest = j.entries[j.entries.length - 1];
+  say($('lookSay'), 'jttp://' + esc(j.site) + ' — latest claim #' + latest.seq + ' sealed ' + when(latest.issuedAt) + ', valid until ' + day(latest.expires) + ', log entry ' + latest.index + '. ' +
+    (latest.revoked ? '<span class="pill bad">REVOKED</span>' : (latest.expires * 1000 < Date.now() ? '<span class="pill bad">EXPIRED</span>' : '<span class="pill ok">SEALED</span>')), latest.revoked ? 'bad' : 'ok');
+}
+$('look').onclick = look;
+$('site').onkeydown = e => { if (e.key === 'Enter') look(); };
+
+// ---- overview and log ---------------------------------------------------------------------
+async function refresh(){
+  try {
+    const o = await (await fetch(BASE + 'api/overview')).json();
+    const exp = o.issuer.notAfter * 1000;
+    const soon = exp - Date.now() < 14 * 864e5;
+    $('anchor').innerHTML =
+      '<div>Root key <span class="pill">' + esc(o.root.algorithm) + '</span></div>' +
+      '<div class="mono">' + esc(o.root.fingerprint) + '</div>' +
+      '<div style="margin-top:.5rem">Issuing key #' + o.issuer.serial + ' — ' + esc(o.issuer.name) + '</div>' +
+      '<div>valid until ' + day(o.issuer.notAfter) + (soon ? ' <span class="pill bad">renew soon</span>' : '') + '</div>' +
+      '<div style="margin-top:.5rem">Revocations: list #' + o.revocations.number + ', ' + o.revocations.seals + ' seal(s), ' + o.revocations.issuers + ' issuing key(s)</div>' +
+      '<div style="margin-top:.5rem"><a href="' + BASE + 'v1/ca/root" style="color:var(--acc)">root and issuer certificate (JSON)</a></div>';
+    $('head').innerHTML =
+      '<div>' + o.log.size + ' entr' + (o.log.size === 1 ? 'y' : 'ies') + ' · last sealed ' + when(o.log.updated) + '</div>' +
+      '<div class="mono">' + esc(o.log.root || '—') + '</div>' +
+      '<div style="margin-top:.5rem">Audit: ' + (o.audit.ok ? '<span class="pill ok">log is consistent</span>' : '<span class="pill bad">PROBLEM</span>') + '</div>' +
+      '<div class="dim" style="font-size:.82rem">' + esc(o.audit.detail || '') + '</div>';
+    const l = await (await fetch(BASE + 'api/log')).json();
+    $('rows').innerHTML = l.entries.length ? l.entries.map(e =>
+      '<tr><td>' + e.index + '</td><td>jttp://' + esc(e.site) + '</td><td>#' + e.seq + '</td><td>' + when(e.issuedAt) + '</td><td>' + day(e.expires) + '</td></tr>').join('')
+      : '<tr><td colspan="5" class="dim">Nothing has been sealed yet.</td></tr>';
+    $('more').textContent = l.total > l.entries.length ? 'Showing the newest ' + l.entries.length + ' of ' + l.total + '.' : '';
+  } catch { $('anchor').textContent = 'The CA is not reachable right now.'; }
+}
+refresh();
+</script>
+</main></body></html>

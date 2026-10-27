@@ -466,8 +466,12 @@ public class SealedDocumentTests
         CryptographicOperations.ZeroMemory(master);
 
         var path = paths.SiteDoc("pinwheelexplained.com");
-        var json = File.ReadAllText(path).Replace("Pinwheel, explained", "Pinwheel, tampered", StringComparison.Ordinal);
-        File.WriteAllText(path, json);
+        var json = File.ReadAllText(path);
+        Assert.DoesNotContain("sealed document that this browser authenticates", json); // page text is sealed at rest
+        var node = System.Text.Json.Nodes.JsonNode.Parse(json)!;
+        var ct = node["SealedMarkup"]!["Ciphertext"]!.GetValue<string>();
+        node["SealedMarkup"]!["Ciphertext"] = (ct[0] == 'A' ? "B" : "A") + ct[1..];
+        File.WriteAllText(path, node.ToJsonString());
 
         Assert.Throws<IntegrityException>(() => DocumentStore.Load(paths, "pinwheelexplained.com"));
     }

@@ -105,7 +105,7 @@ internal static class Program
         var master = Keystore.Unlock(paths, pin);
         try
         {
-            var doc = DocumentStore.Publish(paths, site, host, master);
+            var doc = DocumentStore.Publish(paths, site, host, master, null, opts.Get("access-key"));
             var page = Kml.Parse(doc.Markup, host);
             Ok($"published jttp://{host}/");
             Console.WriteLine($"  headline: {page.Headline}");
@@ -114,7 +114,11 @@ internal static class Program
             Console.WriteLine($"  blobs:    {doc.Blobs.Count} sealed (AES-256-GCM)");
             foreach (var (id, blob) in doc.Blobs.OrderBy(k => k.Key))
                 Console.WriteLine($"    {id,-10} {blob.Mime,-18} {blob.PlainLength,6} B plain");
-            Console.WriteLine($"  doc key:  wrapped under the profile master key");
+            Console.WriteLine($"  doc key:  wrapped under the profile master key; page and public blobs open for any reader");
+            if (doc.IssuedAccessKey is not null)
+            {
+                Console.WriteLine($"  access key (protected blobs; tell readers, it is not stored): {doc.IssuedAccessKey}");
+            }
             Console.WriteLine($"  content:  {doc.Integrity} (SHA-256 sent to the registry)");
             Console.WriteLine($"  integrity: {doc.Integrity[..16]}… (SHA-256; not authorship)");
             return 0;
@@ -458,6 +462,7 @@ created and closed by its owner but not sold or traded.
             Console.WriteLine("""
 registry sync   --url URL --key FILE [--data DIR]
 registry status [--data DIR]
+registry announce --url URL --name HOST[,HOST] [--data DIR]   (KICKL_ADMIN_TOKEN in env)
 
 sync fetches the signed phonebook, verifies the hybrid Ed25519 + ML-DSA-65 signature and
 Merkle root, then writes the records into the local mirror. --key is the public
@@ -506,6 +511,51 @@ registry-key.json published by the signer; its fingerprint is pinned on first sy
                 Console.WriteLine($"  records:  {registry.Records.Count}");
                 PrintPins(state);
                 return 0;
+            }
+            case "announce":
+            {
+                // Tell the signed registry about a republished name so every reader expects its new
+                // content hash. Operator-only in this slice: the admin token comes from the
+                // environment so it never lands in shell history.
+                var url = opts.Get("url") ?? throw new ArgumentException("--url is required.");
+                var token = Environment.GetEnvironmentVariable("KICKL_ADMIN_TOKEN");
+                if (string.IsNullOrWhiteSpace(token))
+                {
+                    Error("set KICKL_ADMIN_TOKEN in the environment first.");
+                    return 1;
+                }
+                var names = (opts.Get("name") ?? throw new ArgumentException("--name host[,host...] is required."))
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+                http.DefaultRequestHeaders.Add("X-Kickl-Admin", token);
+                var failed = 0;
+                foreach (var name in names)
+                {
+                    var r = LocalRegistry.Resolve(registry, name);
+                    if (r is null) { Error($"{name}: not in the local registry."); failed++; continue; }
+                    var body = JsonSerializer.Serialize(new
+                    {
+                        name = r.Name, owner = r.Owner, docFile = r.DocFile, notAfter = r.NotAfter,
+                        proof = r.Proof, sig = r.Sig, status = r.Status, ownerId = r.OwnerId,
+                        badgeId = r.BadgeId, titleSeq = r.TitleSeq, originDeviceId = r.OriginDeviceId,
+                        directPublicKey = r.DirectPublicKey, directEndpoint = r.DirectEndpoint,
+                        title = r.Title, headline = r.Headline, storyAuthor = r.StoryAuthor,
+                        storyDate = r.StoryDate, storyLocation = r.StoryLocation, tags = r.Tags,
+                        contentHash = r.ContentHash
+                    });
+                    var response = http.PostAsync(url.TrimEnd('/') + "/v1/registry/register",
+                        new StringContent(body, Encoding.UTF8, "application/json")).GetAwaiter().GetResult();
+                    if (response.IsSuccessStatusCode)
+                        Ok($"{name} announced · content {r.ContentHash[..16]}…");
+                    else
+                    {
+                        Error($"{name}: {(int)response.StatusCode} {response.Content.ReadAsStringAsync().GetAwaiter().GetResult()}");
+                        failed++;
+                    }
+                }
+                Console.WriteLine("  run `registry sync` on each device to receive the signed update.");
+                return failed == 0 ? 0 : 1;
             }
             case "status":
             {

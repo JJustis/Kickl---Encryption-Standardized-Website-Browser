@@ -337,6 +337,189 @@ public class ContentHashTests
     }
 }
 
+public class CrossProfileTests
+{
+    private const string Protected = """
+        <?xml version="1.0" encoding="utf-8"?>
+        <kml v="1" site="vaultsite.com" epoch="1">
+          <head><title>Vault</title>
+            <meta name="headline" content="A page with a public part and a protected part."/>
+            <meta name="tags" content="demo, protected"/></head>
+          <body><page><h1>Vault</h1>
+            <blob id="open" mime="text/plain"/>
+            <blob id="secret" mime="text/plain" access="protected"/>
+          </page></body>
+        </kml>
+        """;
+
+    private static SealedDocument PublishAs(string root, string profile, string pin, string host,
+        string markup, string? accessKey = null)
+    {
+        var paths = new DataPaths(root, profile);
+        Keystore.Create(paths, pin);
+        var master = Keystore.Unlock(paths, pin);
+        try
+        {
+            return DocumentStore.PublishMarkup(paths, host, markup, master,
+                new Dictionary<string, PendingBlob>
+                {
+                    ["open"] = new("text/plain", Encoding.UTF8.GetBytes("PUBLIC-NOTE")),
+                    ["secret"] = new("text/plain", Encoding.UTF8.GetBytes("SECRET-NOTE"))
+                }, accessKey);
+        }
+        finally { CryptographicOperations.ZeroMemory(master); }
+    }
+
+    [Fact]
+    public void PublicContentOpensForAnyProfile_AndTheRegistryHashStillMatches()
+    {
+        using var temp = new TempDir();
+        var owner = new DataPaths(temp.Path, "local");
+        Keystore.Create(owner, "1234");
+        var master = Keystore.Unlock(owner, "1234");
+        var doc = DocumentStore.Publish(owner, Fixture.SiteDir, "pinwheelexplained.com", master);
+        CryptographicOperations.ZeroMemory(master);
+
+        using var other = new BrowserSession(temp.Path, "josh");
+        other.CreateProfile("00000000");
+        other.Open("jttp://pinwheelexplained.com/", "00000000");
+        Assert.Contains("PINWHEEL-CANARY-7f3a", other.UnlockBlob("b1"));
+
+        // Going to another document and back must not reuse a stale document key.
+        other.Open("jttp://pinwheelexplained.com/");
+        Assert.Contains("PINWHEEL-CANARY-7f3a", other.UnlockBlob("b1"));
+
+        using var home = new BrowserSession(temp.Path, "local");
+        home.Open("jttp://pinwheelexplained.com/", "1234");
+        Assert.Equal(doc.Integrity, home.Document!.Integrity);
+        Assert.Contains("PINWHEEL-CANARY-7f3a", home.UnlockBlob("b1"));
+    }
+
+    [Fact]
+    public void PageMarkupIsCiphertextOnDisk()
+    {
+        using var temp = new TempDir();
+        PublishAs(temp.Path, "local", "pw", "vaultsite.com", Protected);
+        var json = File.ReadAllText(new DataPaths(temp.Path, "local").SiteDoc("vaultsite.com"));
+        Assert.DoesNotContain("A page with a public part", json);
+        Assert.DoesNotContain("<h1>", json);
+    }
+
+    [Fact]
+    public void ProtectedBlobNeedsTheAccessKey_PublicBlobDoesNot()
+    {
+        using var temp = new TempDir();
+        var doc = PublishAs(temp.Path, "local", "pw", "vaultsite.com", Protected);
+        var key = doc.IssuedAccessKey!;
+        Assert.Equal("protected", doc.Blobs["secret"].Access);
+        Assert.Equal("public", doc.Blobs["open"].Access);
+
+        using var reader = new BrowserSession(temp.Path, "reader");
+        reader.CreateProfile("reader-pin");
+        reader.Open("jttp://vaultsite.com/", "reader-pin");
+
+        Assert.Equal("PUBLIC-NOTE", reader.UnlockBlob("open"));
+        Assert.Throws<AccessKeyRequiredException>(() => reader.UnlockBlob("secret"));
+        Assert.Throws<CryptographicException>(() => reader.UnlockBlob("secret", null, "WRONG-KEY"));
+        Assert.Equal("SECRET-NOTE", reader.UnlockBlob("secret", null, key.Replace("-", " ")));
+    }
+
+    [Fact]
+    public void AuthorChosenAccessKeyWorks()
+    {
+        using var temp = new TempDir();
+        PublishAs(temp.Path, "local", "pw", "vaultsite.com", Protected, accessKey: "correct horse");
+        using var reader = new BrowserSession(temp.Path, "reader");
+        reader.CreateProfile("reader-pin");
+        reader.Open("jttp://vaultsite.com/", "reader-pin");
+        Assert.Equal("SECRET-NOTE", reader.UnlockBlob("secret", null, "correct horse"));
+    }
+
+    [Fact]
+    public void OlderAuthorOnlyPackageOpensToEveryoneOnceItsAuthorOpensIt()
+    {
+        using var temp = new TempDir();
+        var owner = new DataPaths(temp.Path, "vikerus");
+        Keystore.Create(owner, "owner-pin");
+        var master = Keystore.Unlock(owner, "owner-pin");
+        var published = DocumentStore.Publish(owner, Fixture.SiteDir, "pinwheelexplained.com", master);
+        CryptographicOperations.ZeroMemory(master);
+
+        // Turn it back into an older package: plaintext markup, no public wrap.
+        var path = owner.SiteDoc("pinwheelexplained.com");
+        var old = System.Text.Json.JsonSerializer.Deserialize<SealedDocument>(File.ReadAllText(path))!;
+        old.Markup = DocumentStore.Load(owner, "pinwheelexplained.com").Markup;
+        old.SealedMarkup = null;
+        old.PublicWrap = new WrappedKey();
+        old.PublicSalt = [];
+        File.WriteAllText(path, System.Text.Json.JsonSerializer.Serialize(old));
+
+        using var stranger = new BrowserSession(temp.Path, "stranger");
+        stranger.CreateProfile("stranger-pin");
+        stranger.Open("jttp://pinwheelexplained.com/", "stranger-pin");
+        var ex = Assert.Throws<CryptographicException>(() => stranger.UnlockBlob("b1"));
+        Assert.Contains("author", ex.Message);
+
+        using var author = new BrowserSession(temp.Path, "vikerus");
+        author.Open("jttp://pinwheelexplained.com/", "owner-pin");
+        Assert.Contains("PINWHEEL-CANARY-7f3a", author.UnlockBlob("b1"));
+        Assert.DoesNotContain("<h1>", File.ReadAllText(path));
+
+        stranger.Open("jttp://pinwheelexplained.com/");
+        Assert.Contains("PINWHEEL-CANARY-7f3a", stranger.UnlockBlob("b1"));
+        Assert.Equal(published.Integrity, stranger.Document!.Integrity);
+    }
+
+    [Fact]
+    public void RepublishedNameOpensForAProfileHoldingAnOlderCopy_WithoutAnAttackReport()
+    {
+        using var temp = new TempDir();
+        string Markup(string headline) => $"""
+            <?xml version="1.0" encoding="utf-8"?>
+            <kml v="1" site="feedexample.com" epoch="1">
+              <head><title>{headline}</title>
+                <meta name="headline" content="{headline}"/>
+                <meta name="tags" content="rss, news"/></head>
+              <body><page><h1>{headline}</h1><p>Story text for {headline}.</p></page></body>
+            </kml>
+            """;
+        void Publish(string profile, string pin, string headline)
+        {
+            var paths = new DataPaths(temp.Path, profile);
+            if (!Keystore.Exists(paths)) Keystore.Create(paths, pin);
+            var m = Keystore.Unlock(paths, pin);
+            DocumentStore.PublishMarkup(paths, "feedexample.com", Markup(headline), m);
+            CryptographicOperations.ZeroMemory(m);
+        }
+
+        Publish("joshua", "j-pin", "First story");
+        Publish("josh", "x-pin", "Second story"); // another profile republishes the unclaimed name
+
+        using var joshua = new BrowserSession(temp.Path, "joshua");
+        var page = joshua.Open("jttp://feedexample.com/", "j-pin"); // holds a stale copy of its own
+        Assert.Equal("Second story", page.Title);
+        var record = LocalRegistry.Resolve(LocalRegistry.LoadOrEmpty(new DataPaths(temp.Path, "joshua")), "feedexample.com")!;
+        Assert.Equal(0, record.ContentMismatchCount);
+    }
+
+    [Fact]
+    public void PlaintextHashIsIndependentOfTheSealingKey()
+    {
+        using var a = new TempDir();
+        using var b = new TempDir();
+        string Seal(string dir, string pin)
+        {
+            var p = new DataPaths(dir);
+            Keystore.Create(p, pin);
+            var m = Keystore.Unlock(p, pin);
+            var d = DocumentStore.Publish(p, Fixture.SiteDir, "pinwheelexplained.com", m);
+            CryptographicOperations.ZeroMemory(m);
+            return d.Integrity;
+        }
+        Assert.Equal(Seal(a.Path, "one"), Seal(b.Path, "two"));
+    }
+}
+
 public class PhonebookTests
 {
     private static RegistryFile Index() => new()

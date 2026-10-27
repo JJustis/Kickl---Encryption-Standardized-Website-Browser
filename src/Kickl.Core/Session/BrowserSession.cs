@@ -3,17 +3,20 @@ using System.Text;
 using Kickl.Core.Ads;
 using Kickl.Core.Crypto;
 using Kickl.Core.Documents;
+using Kickl.Core.Games;
 using Kickl.Core.Markup;
 using Kickl.Core.Names;
 using Kickl.Core.Ownership;
 using Kickl.Core.Privacy;
 using Kickl.Core.Registry;
 using Kickl.Core.Relay;
+using Kickl.Core.Trust;
 using Kickl.Core.Util;
 
 namespace Kickl.Core.Session;
 
-public sealed record OwnershipStatus(bool Owned, string? OwnerId, string? BadgeId, string Detail);
+public sealed record OwnershipStatus(bool Owned, string? OwnerId, string? BadgeId, string Detail,
+    bool Verified = false, string VerifiedDetail = "");
 
 public sealed record PfsLookupResult(
     LookupResponse Response,
@@ -35,6 +38,7 @@ public sealed class BrowserSession : IDisposable
     private byte[]? _master;
     private SessionSecret? _session;
     private byte[]? _docKey;
+    private byte[]? _protectedKey;
     private SealedDocument? _document;
     private JttpUrl? _current;
 
@@ -107,6 +111,10 @@ public sealed class BrowserSession : IDisposable
         var doc = LoadPackage(lookup.Response, url.Host, out var transport, out var fingerprint);
         VerifyContentHash(url.Host, lookup.Response.ContentHash, doc.Integrity);
         _document = doc;
+        if (_docKey is not null) CryptographicOperations.ZeroMemory(_docKey);
+        _docKey = null; // the keys belong to the previous document
+        if (_protectedKey is not null) CryptographicOperations.ZeroMemory(_protectedKey);
+        _protectedKey = null;
         _current = url;
         LastTransport = transport;
         LastTransportFingerprint = fingerprint;
@@ -175,8 +183,9 @@ public sealed class BrowserSession : IDisposable
     public PageView CreateSite(StoryDraft draft)
     {
         if (_master is null) throw new InvalidOperationException("Unlock the profile before publishing.");
-        SiteComposer.Publish(_paths, draft, _master);
         var host = draft.Host.Trim().ToLowerInvariant();
+        SiteClaims.EnsureMayPublish(_paths, host, HoldsCert(host));
+        SiteComposer.Publish(_paths, draft, _master, HeldCert(host)?.Seal);
         return Open("jttp://" + host + "/");
     }
 
@@ -298,6 +307,81 @@ public sealed class BrowserSession : IDisposable
 
     public OwnershipStatus OwnershipOf(string host)
     {
+        var status = OwnershipCore(host);
+        var check = OwnershipVerification(host);
+        return status with { Verified = check.Verified, VerifiedDetail = check.Reason };
+    }
+
+    /// <summary>
+    /// Is this name's ownership sealed by the Kickl CA? The seal comes from the page itself (so every visitor can
+    /// check it, not only the owner) or from the owner's own certificate. It must chain to the CA root built into
+    /// this browser, be in the CA's transparency log, and not be revoked.
+    /// </summary>
+    public SealCheck OwnershipVerification(string host)
+    {
+        host = host.ToLowerInvariant();
+        var seal = _document is { } d && string.Equals(d.Site, host, StringComparison.OrdinalIgnoreCase) ? d.Seal : null;
+        seal ??= HeldCert(host)?.Seal;
+        if (seal is null) return SealCheck.No("not sealed by the CA");
+
+        var root = CaPins.Root(_paths);
+        if (root is null) return SealCheck.No("this build has no CA root to check against");
+
+        var title = SiteClaims.ActiveTitle(_paths, host);
+        var check = CaTrust.VerifySeal(root, seal, host, DateTimeOffset.UtcNow, CaPins.CachedRevocations(_paths), title?.Seq);
+        return check.Verified && CaPins.TestRootInUse ? new SealCheck(true, "TEST CA: sealed by a throwaway test CA, not the real Kickl CA") : check;
+    }
+
+    /// <summary>Refresh the CA's revocation list in the background; a failure leaves the one already held in force.</summary>
+    public async Task RefreshCaRevocationsAsync(HttpClient? http = null, CancellationToken ct = default)
+    {
+        var own = http is null;
+        http ??= new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        try { await CaPins.RefreshRevocationsAsync(_paths, http, DateTimeOffset.UtcNow, ct); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { }
+        finally { if (own) http.Dispose(); }
+    }
+
+    /// <summary>
+    /// Send this profile's shop receipt for <paramref name="host"/> to the CA. The CA checks it, logs it, and returns
+    /// a countersigned seal. The seal is checked here against the pinned root before it is kept, then published with
+    /// the site so every visitor sees the VERIFIED OWNER badge.
+    /// </summary>
+    public async Task<SealCheck> SubmitToCaAsync(string host, HttpClient? http = null, CancellationToken ct = default)
+    {
+        host = host.ToLowerInvariant();
+        var cert = HeldCert(host) ?? throw new ClaimException(
+            $"Import the ownership certificate for jttp://{host}/ first; the CA seals receipts, not names.");
+        var root = CaPins.Root(_paths) ?? throw new ClaimException("This build has no CA root, so it cannot check the CA's answer.");
+
+        var own = http is null;
+        http ??= new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        try
+        {
+            await CaPins.RefreshRevocationsAsync(_paths, http, DateTimeOffset.UtcNow, ct).ConfigureAwait(false);
+            var seal = await CaClient.CountersignAsync(http, CaPins.CaUrl(), cert, ct);
+
+            var check = CaTrust.VerifySeal(root, seal, host, DateTimeOffset.UtcNow, CaPins.CachedRevocations(_paths), cert.Seq);
+            if (!check.Verified) throw new ClaimException("The CA's answer did not verify, so it was discarded: " + check.Reason);
+
+            cert.Seal = seal;
+            SaveCert(cert);
+            DocumentStore.AttachSeal(_paths, host, seal);
+            if (_document is { } d && string.Equals(d.Site, host, StringComparison.OrdinalIgnoreCase)) d.Seal = seal;
+            return check;
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new ClaimException("Could not reach the CA: " + ex.Message);
+        }
+        finally
+        {
+            if (own) http.Dispose();
+        }
+    }
+
+    private OwnershipStatus OwnershipCore(string host)
+    {
         var record = LocalRegistry.Resolve(LocalRegistry.LoadOrEmpty(_paths), host);
         if (record is null || !LocalRegistry.IsOwned(record))
             return new OwnershipStatus(false, null, null, "no paid title");
@@ -313,13 +397,101 @@ public sealed class BrowserSession : IDisposable
         return new OwnershipStatus(true, title.OwnerId, title.BadgeId, "badge active");
     }
 
-    public string UnlockBlob(string blobId, string? pin = null)
+    // ------------------------------------------------------------------ site claims
+
+    /// <summary>The BTC shop page that sells the claim, prefilled with this name.</summary>
+    public string ClaimShopLink(string host) => SiteClaims.ClaimLink(SiteClaims.ShopUrl(), host.ToLowerInvariant());
+
+    private string CertsPath => Path.Combine(_paths.ProfileRoot, "private", "certs.kpf");
+
+    private List<OwnershipCert> LoadCerts()
     {
-        var plain = UnlockBlobBytes(blobId, pin);
+        if (!File.Exists(CertsPath)) return [];
+        var plain = OpenProfileData("ownership-certs", File.ReadAllBytes(CertsPath));
+        try { return System.Text.Json.JsonSerializer.Deserialize<List<OwnershipCert>>(plain) ?? []; }
+        finally { CryptographicOperations.ZeroMemory(plain); }
+    }
+
+    private void SaveCert(OwnershipCert cert)
+    {
+        var list = LoadCerts();
+        list.RemoveAll(c => c.Site == cert.Site && c.Seq <= cert.Seq);
+        list.Add(cert);
+        var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(list);
+        Directory.CreateDirectory(Path.GetDirectoryName(CertsPath)!);
+        File.WriteAllBytes(CertsPath, ProtectProfileData("ownership-certs", bytes));
+        CryptographicOperations.ZeroMemory(bytes);
+    }
+
+    /// <summary>The newest certificate this profile has for a name, if it is still the current claim.</summary>
+    private OwnershipCert? HeldCert(string host)
+    {
+        if (!IsUnlocked) return null;
+        var title = SiteClaims.ActiveTitle(_paths, host);
+        return title is null ? null
+            : LoadCerts().FirstOrDefault(c => string.Equals(c.Site, host, StringComparison.OrdinalIgnoreCase)
+                                              && c.Seq == title.Seq && !c.IsExpired);
+    }
+
+    public bool HoldsCert(string host) => HeldCert(host) is not null;
+
+    /// <summary>Is the name claimed, and may this profile edit it (does it hold the current certificate)?</summary>
+    public (bool Claimed, bool MayEdit) EditAccess(string host)
+    {
+        if (SiteClaims.ActiveTitle(_paths, host) is null) return (false, true);
+        return (true, HoldsCert(host));
+    }
+
+    /// <summary>A copy of the certificate this profile holds, to save as a file.</summary>
+    public byte[] ExportCert(string host) =>
+        HeldCert(host)?.ToBytes() ?? throw new ClaimException($"This profile holds no certificate for jttp://{host}/.");
+
+    /// <summary>
+    /// A site asked for proof of ownership at /edit. The certificate is checked against the pinned shop key
+    /// (fetched once if this device has never met the shop) and remembered, encrypted, in this profile.
+    /// </summary>
+    public async Task<OwnershipCert> ImportCertAsync(string host, byte[] file, HttpClient? http = null, CancellationToken ct = default)
+    {
+        if (!IsUnlocked) throw new InvalidOperationException("Unlock the profile first.");
+        host = host.ToLowerInvariant();
+        var cert = OwnershipCert.Parse(file);
+        if (!string.Equals(cert.Site, host, StringComparison.OrdinalIgnoreCase))
+            throw new ClaimException($"This certificate is for jttp://{cert.Site}/, not jttp://{host}/.");
+
+        var spki = SiteClaims.PinnedShopKey(_paths);
+        if (spki is null)
+        {
+            var own = http is null;
+            http ??= new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+            try { spki = await SiteClaims.FetchShopKeyAsync(http, SiteClaims.ShopUrl(), ct); }
+            catch (HttpRequestException ex)
+            {
+                throw new ClaimException("This device has not met the BTC shop yet and cannot reach it to learn its signing key: " + ex.Message);
+            }
+            finally { if (own) http.Dispose(); }
+        }
+
+        SiteClaims.Accept(_paths, cert, spki, host);
+        SaveCert(cert);
+
+        // A certificate that comes back from the CA already sealed: publish the seal with the site, but only if it
+        // checks out against the root built into this browser.
+        if (cert.Seal is { } seal && CaPins.Root(_paths) is { } root
+            && CaTrust.VerifySeal(root, seal, host, DateTimeOffset.UtcNow, CaPins.CachedRevocations(_paths), cert.Seq).Verified)
+        {
+            DocumentStore.AttachSeal(_paths, host, seal);
+            if (_document is { } d && string.Equals(d.Site, host, StringComparison.OrdinalIgnoreCase)) d.Seal = seal;
+        }
+        return cert;
+    }
+
+    public string UnlockBlob(string blobId, string? pin = null, string? accessKey = null)
+    {
+        var plain = UnlockBlobBytes(blobId, pin, accessKey);
         try
         {
             var text = Encoding.UTF8.GetString(plain);
-            if (text.Contains('\uFFFD'))
+            if (text.Contains('�'))
                 throw new InvalidOperationException("Binary blob; use UnlockBlobBytes for images.");
             return text;
         }
@@ -329,8 +501,11 @@ public sealed class BrowserSession : IDisposable
         }
     }
 
-    /// <summary>Decrypt a blob and return its bytes. The caller owns and must zero the array.</summary>
-    public byte[] UnlockBlobBytes(string blobId, string? pin = null)
+    /// <summary>
+    /// Decrypt a blob and return its bytes. The caller owns and must zero the array. Public blobs
+    /// open for any reader with an unlocked session; protected blobs also need the site's access key.
+    /// </summary>
+    public byte[] UnlockBlobBytes(string blobId, string? pin = null, string? accessKey = null)
     {
         if (!IsUnlocked)
         {
@@ -342,24 +517,139 @@ public sealed class BrowserSession : IDisposable
         if (!doc.Blobs.TryGetValue(blobId, out var blob))
             throw new KeyNotFoundException($"Blob '{blobId}' is not part of this document.");
 
-        _docKey ??= UnwrapDocKey(doc);
+        byte[] key;
+        if (blob.Access == "protected")
+        {
+            if (_protectedKey is null)
+            {
+                if (string.IsNullOrWhiteSpace(accessKey))
+                    throw new AccessKeyRequiredException(doc.Site);
+                _protectedKey = DocumentStore.OpenAccessKey(doc, accessKey);
+            }
+            key = _protectedKey;
+        }
+        else
+        {
+            key = _docKey ??= PublicKeyOf(doc);
+        }
 
         var aad = Encoding.UTF8.GetBytes($"kickl/v1/blob|{doc.Site}|{blobId}");
+        byte[] plain;
         try
         {
-            return Aead.Open(_docKey, blob.Nonce, blob.Ciphertext, aad);
+            plain = Aead.Open(key, blob.Nonce, blob.Ciphertext, aad);
         }
         catch (CryptographicException)
         {
             throw new CryptographicException("The blob failed authentication (wrong key, wrong session, or tampered).");
         }
+
+        if (!DocumentStore.BlobPlaintextMatches(doc, blob, plain))
+        {
+            CryptographicOperations.ZeroMemory(plain);
+            throw new CryptographicException("The blob does not match the content hash the registry published.");
+        }
+        return plain;
     }
 
-    private byte[] UnwrapDocKey(SealedDocument doc)
+    // ------------------------------------------------------------------ games
+
+    /// <summary>
+    /// Unclaimed names are free, so their games get tight ceilings. A claimed name has paid, so it may run
+    /// bigger games. Neither limit can be removed by the game.
+    /// </summary>
+    public GameLimits GameLimitsFor(string host) => SiteClaims.ActiveTitle(_paths, host) is null
+        ? new GameLimits(MaxModuleBytes: 512 * 1024, MaxMemoryBytes: 8L << 20, InitFuel: 100_000_000, FrameFuel: 10_000_000)
+        : new GameLimits(MaxModuleBytes: 2 * 1024 * 1024, MaxMemoryBytes: 32L << 20, InitFuel: 400_000_000, FrameFuel: 40_000_000);
+
+    /// <summary>
+    /// Open the sealed wasm blob <paramref name="blobId"/> of the current page as a game, restore this reader's
+    /// save for it, and return it ready for Start(). The caller disposes the game.
+    /// </summary>
+    public WasmGame LoadGame(string blobId, string? accessKey = null)
     {
+        var doc = _document ?? throw new InvalidOperationException("Open a document first.");
+        if (!doc.Blobs.TryGetValue(blobId, out var blob))
+            throw new KeyNotFoundException($"Blob '{blobId}' is not part of this document.");
+        if (blob.Mime != "application/wasm")
+            throw new GameRejectedException($"Blob '{blobId}' is {blob.Mime}, not a WebAssembly game.");
+
+        var bytes = UnlockBlobBytes(blobId, null, accessKey);
+        try
+        {
+            var game = WasmGame.Load(bytes, GameLimitsFor(doc.Site));
+            try
+            {
+                game.RestoreSave(LoadGameSave(doc.Site, blobId));
+                return game;
+            }
+            catch
+            {
+                game.Dispose();
+                throw;
+            }
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(bytes);
+        }
+    }
+
+    private string GameSavesPath => Path.Combine(_paths.ProfileRoot, "private", "game-saves.kpf");
+
+    private Dictionary<string, byte[]> LoadGameSaves()
+    {
+        if (!File.Exists(GameSavesPath)) return new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        var plain = OpenProfileData("game-saves", File.ReadAllBytes(GameSavesPath));
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, byte[]>>(plain)
+                   ?? new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        }
+        finally { CryptographicOperations.ZeroMemory(plain); }
+    }
+
+    public byte[] LoadGameSave(string site, string blobId) =>
+        LoadGameSaves().TryGetValue($"{site}|{blobId}", out var data) ? data : [];
+
+    /// <summary>Keep a game's save bytes, encrypted, in this profile only. At most 64 saves of 4 KiB each.</summary>
+    public void SaveGameData(string site, string blobId, byte[] data)
+    {
+        if (data.Length > 4096) data = data[..4096];
+        var all = LoadGameSaves();
+        var key = $"{site}|{blobId}";
+        if (data.Length == 0) all.Remove(key);
+        else if (all.ContainsKey(key) || all.Count < 64) all[key] = data;
+        else return;
+
+        var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(all);
+        Directory.CreateDirectory(Path.GetDirectoryName(GameSavesPath)!);
+        File.WriteAllBytes(GameSavesPath, ProtectProfileData("game-saves", bytes));
+        CryptographicOperations.ZeroMemory(bytes);
+    }
+
+    private byte[] PublicKeyOf(SealedDocument doc)
+    {
+        var shared = DocumentStore.PublicKeyOf(doc);
+        if (shared is not null) return shared;
+
+        // Older package, sealed to its author alone. If this profile is that author, open it up
+        // for everyone; otherwise it stays closed until the author's profile opens it once.
         if (_master is null) throw new InvalidOperationException("The session is locked.");
         var aad = Encoding.UTF8.GetBytes($"kickl/v1/doc-key|{doc.Site}");
-        return Aead.Open(_master, doc.DocKey.Nonce, doc.DocKey.Ciphertext, aad);
+        byte[] key;
+        try
+        {
+            key = Aead.Open(_master, doc.DocKey.Nonce, doc.DocKey.Ciphertext, aad);
+        }
+        catch (CryptographicException)
+        {
+            throw new CryptographicException(
+                $"jttp://{doc.Site}/ is an older package that only its author's profile can open. " +
+                "Open it once from the profile that created it and it becomes readable by everyone.");
+        }
+        DocumentStore.OpenToPublic(_paths, doc, key);
+        return key;
     }
 
     public void Lock()
@@ -370,6 +660,8 @@ public sealed class BrowserSession : IDisposable
         _master = null;
         if (_docKey is not null) CryptographicOperations.ZeroMemory(_docKey);
         _docKey = null;
+        if (_protectedKey is not null) CryptographicOperations.ZeroMemory(_protectedKey);
+        _protectedKey = null;
     }
 
     public void Dispose() => Lock();

@@ -25,11 +25,11 @@
           "SQLitePCLRaw.core": "2.1.13"
         }
       },
-      "Microsoft.NET.ILLink.Tasks": {
+      "Wasmtime": {
         "type": "Direct",
-        "requested": "[10.0.2, )",
-        "resolved": "10.0.2",
-        "contentHash": "sXdDtMf2qcnbygw9OdE535c2lxSxrZP8gO4UhDJ0xiJbl1wIqXS1OTcTDFTIJPOFd6Mhcm8gPEthqWGUxBsTqw=="
+        "requested": "[48.0.2, )",
+        "resolved": "48.0.2",
+        "contentHash": "BBqIEIPSTQ5cCVfxk6kH4lYSwNiMQ8Bf2F8Sy1I8N0JkvrWYoqhG3ro41R3JhNStIs0tVbqajBXXKnahyxHn0g=="
       },
       "Microsoft.Data.Sqlite.Core": {
         "type": "Transitive",
@@ -65,13 +65,6 @@
         "dependencies": {
           "SQLitePCLRaw.core": "2.1.13"
         }
-      }
-    },
-    "net10.0/win-x64": {
-      "SQLitePCLRaw.lib.e_sqlite3": {
-        "type": "Transitive",
-        "resolved": "2.1.13",
-        "contentHash": "D2UAuiGxFYBqeRXjjjGgvJ5UQifzn6wefmSqeKU7XcNGKLbJRP6X7kcPZ6opOBJGdCIlgbSxTvDpBbLvsN594A=="
       }
     }
   }

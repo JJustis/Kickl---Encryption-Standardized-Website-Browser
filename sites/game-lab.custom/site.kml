@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<kml v="1" site="game-lab.custom" epoch="1">
+  <head>
+    <title>Game lab</title>
+    <meta name="description" content="A playable WebAssembly game running inside the Kickl sandbox."/>
+    <meta name="headline" content="A real game, running in a sandbox with no network, no clock and no files."/>
+    <meta name="tags" content="games, wasm, sandbox, demo"/>
+  </head>
+  <body>
+    <page>
+      <h1>Game lab</h1>
+      <badge>webassembly · no imports · fuel-metered</badge>
+
+      <p>The game below is a compiled WebAssembly module sealed into this page like any other blob.
+      It does not start until you press play. It cannot reach the network, the disk, the clipboard
+      or a clock: the browser hands it a seed, your keys and a 240 by 160 picture to draw on, and
+      nothing else.</p>
+
+      <game id="catcher" label="Catcher"/>
+
+      <h2>How it is kept safe</h2>
+      <p>Every frame runs on a fixed instruction budget, so an endless loop simply stops the game.
+      Its memory is capped. It must declare zero imports or the browser refuses it. When it stops, you
+      see why. The best score it keeps is stored encrypted in your own profile, never on the page.</p>
+
+      <quote>A game is arithmetic on its own memory. Anything else is a request the host never answers.</quote>
+    </page>
+  </body>
+</kml>

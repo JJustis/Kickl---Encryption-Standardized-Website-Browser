@@ -1,0 +1,10 @@
+DirectoryIndex index.php
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteRule ^ index.php [QSA,L]
+</IfModule>
+# the page template is read by PHP; it is not meant to be fetched directly
+<Files "page.html">
+  Require all denied
+</Files>

@@ -19,7 +19,8 @@ public enum BlockKind
     Button,
     Image,
     Html,
-    Ad
+    Ad,
+    Game
 }
 
 public sealed class PageBlock
@@ -34,6 +35,7 @@ public sealed class PageBlock
     public string? Space { get; set; }
     public string? Token { get; set; }
     public int Bytes { get; set; }
+    public bool Protected { get; set; }
     public int Level { get; set; }
 }
 
@@ -95,6 +97,9 @@ public sealed class PageView
                 case BlockKind.Ad:
                     sb.AppendLine($"[ AD · {block.Publisher} · {block.Space} · NCKL ]");
                     break;
+                case BlockKind.Game:
+                    sb.AppendLine($"[ game {block.Id} · {block.Text} · WebAssembly sandbox · {block.Bytes} B ]  press play in the browser");
+                    break;
                 case BlockKind.Blob when unlocked.Contains(block.Id!):
                     sb.AppendLine($"[ {block.Id} · UNLOCKED · {block.Mime} ]");
                     if (texts.TryGetValue(block.Id!, out var text))
@@ -121,16 +126,23 @@ public static class Kml
 {
     private static readonly HashSet<string> AllowedElements = new(StringComparer.Ordinal)
     {
-        "kml", "head", "title", "meta", "styles", "body", "page", "stack", "row", "grid", "card",
+        "kml", "head", "title", "meta", "styles", "body", "page", "stack", "row", "grid", "card", "game",
         "h1", "h2", "h3", "h4", "p", "text", "a", "code", "quote", "hr", "img", "blob", "file",
         "button", "badge", "b", "i", "u", "s", "span", "br", "html", "visual", "ad"
+    };
+
+    private static bool IsProtected(XElement e) => (string?)e.Attribute("access") switch
+    {
+        null or "public" => false,
+        "protected" => true,
+        var other => throw new KmlException($"access=\"{other}\" is not valid; use public or protected.")
     };
 
     private static readonly HashSet<string> AllowedAttributes = new(StringComparer.Ordinal)
     {
         "v", "site", "epoch", "name", "content", "id", "ref", "mime", "w", "h", "label", "size",
         "href", "tone", "align", "class", "width", "cols", "gap", "pad", "src", "alt", "intent",
-        "lang", "mono", "title", "publisher", "space", "token"
+        "lang", "mono", "title", "publisher", "space", "token", "access"
     };
 
     public static PageView Parse(string xml, string host)
@@ -280,7 +292,8 @@ public static class Kml
                     {
                         Kind = BlockKind.Blob,
                         Id = (string?)child.Attribute("id") ?? throw new KmlException("<blob> needs an id."),
-                        Mime = (string?)child.Attribute("mime") ?? "application/octet-stream"
+                        Mime = (string?)child.Attribute("mime") ?? "application/octet-stream",
+                        Protected = IsProtected(child)
                     });
                     break;
                 case "file":
@@ -288,7 +301,18 @@ public static class Kml
                     {
                         Kind = BlockKind.File,
                         Id = (string?)child.Attribute("id") ?? throw new KmlException("<file> needs an id."),
-                        Mime = (string?)child.Attribute("mime") ?? "application/octet-stream"
+                        Mime = (string?)child.Attribute("mime") ?? "application/octet-stream",
+                        Protected = IsProtected(child)
+                    });
+                    break;
+                case "game":
+                    blocks.Add(new PageBlock
+                    {
+                        Kind = BlockKind.Game,
+                        Id = (string?)child.Attribute("id") ?? throw new KmlException("<game> needs the id of its wasm blob."),
+                        Text = (string?)child.Attribute("label") ?? "Game",
+                        Mime = "application/wasm",
+                        Protected = IsProtected(child)
                     });
                     break;
                 case "button":

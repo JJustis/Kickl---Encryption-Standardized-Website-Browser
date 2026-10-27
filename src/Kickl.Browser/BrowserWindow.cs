@@ -23,6 +23,7 @@ using Kickl.Core.Mail;
 using Kickl.Core.Markup;
 using Kickl.Core.Names;
 using Kickl.Core.News;
+using Kickl.Core.Ownership;
 using Kickl.Core.Registry;
 using Kickl.Core.Session;
 using Kickl.Core.Util;
@@ -33,7 +34,7 @@ namespace Kickl.Browser;
 /// Screen one is the browser. Screen two is the saved-news stream fed by every
 /// registry site addition plus opt-in public RSS. Everything is inert until confirmed.
 /// </summary>
-public sealed class BrowserWindow : Window
+public sealed partial class BrowserWindow : Window
 {
     private const string DemoPin = "1234";
     private const double DesignWidth = 1460;
@@ -44,7 +45,7 @@ public sealed class BrowserWindow : Window
     private const string AdPublisherUrl = "jttp://secupgrade.com/adnetworking/publisher";
     private const string SecupgradeRssFile = @"C:\xampp\htdocs\rssfeed.xml";
     private static readonly string[] DemoHosts =
-        [HomeHost, "mesh-lab.custom", "stego-lab.custom", "nickles-testnet.custom", "svg-lab.custom", "sealed-lab.custom"];
+        [HomeHost, "mesh-lab.custom", "stego-lab.custom", "nickles-testnet.custom", "svg-lab.custom", "sealed-lab.custom", "game-lab.custom"];
     private const string Accent = "#58a6ff";
     private const string Green = "#7ee787";
     private const string Amber = "#f2cc60";
@@ -227,6 +228,7 @@ public sealed class BrowserWindow : Window
         _searchOverlay = BuildSearchOverlay();
         _confirmOverlay = BuildConfirmOverlay();
         _shieldOverlay = BuildShieldOverlay();
+        _claimOverlay = BuildClaimOverlay();
         _lockOverlay = BuildLockOverlay();
         _chatOverlay = BuildChatOverlay();
         _mailOverlay = BuildMailOverlay();
@@ -509,6 +511,7 @@ public sealed class BrowserWindow : Window
         surface.Children.Add(_searchOverlay);
         surface.Children.Add(_confirmOverlay);
         surface.Children.Add(_shieldOverlay);
+        surface.Children.Add(_claimOverlay);
         surface.Children.Add(_chatOverlay);
         surface.Children.Add(_mailOverlay);
         surface.Children.Add(_lockOverlay);
@@ -2354,6 +2357,7 @@ public sealed class BrowserWindow : Window
 
     private void NewTab(string address)
     {
+        StopAllGames();
         _tabs.Add(new BrowserTab());
         _active = _tabs.Count - 1;
         NavigateToActive(address);
@@ -2426,6 +2430,7 @@ public sealed class BrowserWindow : Window
 
     private void CloseTab(int index)
     {
+        StopAllGames();
         if (index < 0 || index >= _tabs.Count) return;
         _lastClosedAddress = string.IsNullOrWhiteSpace(_tabs[index].Address)
             ? null
@@ -2451,6 +2456,7 @@ public sealed class BrowserWindow : Window
 
     private void SelectTab(int oneBasedIndex)
     {
+        StopAllGames();
         if (_tabs.Count == 0) return;
         var index = oneBasedIndex == 9 ? _tabs.Count - 1 : oneBasedIndex - 1;
         if (index >= 0 && index < _tabs.Count)
@@ -2600,6 +2606,7 @@ public sealed class BrowserWindow : Window
 
     private void NavigateToActive(string address, bool addHistory = true, bool resetScroll = true)
     {
+        StopAllGames();
         var tab = Active;
         if (tab is null)
         {
@@ -2619,6 +2626,13 @@ public sealed class BrowserWindow : Window
         if (TryBuiltInRoute(address, out var builtIn, out var builtInCanonical))
         {
             OpenBuiltIn(tab, builtIn, builtInCanonical, addHistory, resetScroll);
+            return;
+        }
+
+        tab.EditGate = null;
+        if (TryEditRoute(address, out var editHost))
+        {
+            OpenEditRoute(tab, editHost, addHistory);
             return;
         }
 
@@ -2650,6 +2664,8 @@ public sealed class BrowserWindow : Window
             }
             _address.Text = canonical;
             SetStatus($"opened {canonical} · {tab.Transport} · package hash verified before parse");
+            RefreshCaRevocationsSoon();
+            AutoSealIfNeeded(page.Site);
             RenderAll(resetScroll);
         }
         catch (ContentIntegrityException ex)
@@ -2795,6 +2811,7 @@ public sealed class BrowserWindow : Window
         _mailTimer?.Stop();
         _mailTimer = null;
         _profileEpoch++;
+        StopAllGames();
         _session.Lock();
         _pinBox.Text = "";
         _confirmPinBox.Text = "";
@@ -2867,7 +2884,9 @@ public sealed class BrowserWindow : Window
         {
             _address.Text = tab.Address;
             _titleText.Text = tab.Title;
-            _pageHost.Child = tab.Draft is not null
+            _pageHost.Child = tab.EditGate is not null
+                ? BuildEditGate(tab)
+                : tab.Draft is not null
                 ? BuildEditor(tab)
                 : tab.Error is not null
                     ? BuildError(tab)
@@ -2970,13 +2989,29 @@ public sealed class BrowserWindow : Window
         addressRow.Children.Add(Pill("jttp://" + page.Site + "/", Accent, "#0b1b2c"));
         addressRow.Children.Add(Pill(tab.Verified ? "NAME VERIFIED" : "UNVERIFIED NAME",
             tab.Verified ? Green : Amber, tab.Verified ? "#102118" : "#241f0d"));
-        addressRow.Children.Add(Pill(tab.Ownership?.Owned == true ? "OWNED TITLE" : "NO PAID TITLE",
-            tab.Ownership?.Owned == true ? Green : Muted, tab.Ownership?.Owned == true ? "#102118" : "#141d27"));
+        if (tab.Ownership?.Verified == true)
+        {
+            var isTest = tab.Ownership.VerifiedDetail.StartsWith("TEST CA", StringComparison.Ordinal);
+            var verified = isTest ? Pill("✓ VERIFIED · TEST CA", Amber, "#241f0d") : Pill("✓ VERIFIED OWNER", Green, "#0d2b1a");
+            ToolTip.SetTip(verified, isTest
+                ? "Sealed by a throwaway TEST CA. This is not the real Kickl CA."
+                : "Ownership of this name is sealed by the Kickl CA and recorded in its transparency log.");
+            addressRow.Children.Add(verified);
+        }
+        else
+        {
+            addressRow.Children.Add(Pill(tab.Ownership?.Owned == true ? "OWNED TITLE" : "NO PAID TITLE",
+                tab.Ownership?.Owned == true ? Green : Muted, tab.Ownership?.Owned == true ? "#102118" : "#141d27"));
+        }
         var direct = tab.Transport?.StartsWith("direct", StringComparison.OrdinalIgnoreCase) == true;
         addressRow.Children.Add(Pill(direct ? "DIRECT FROM ORIGIN" : "LOCAL MIRROR",
             direct ? Green : Muted, direct ? "#102118" : "#141d27"));
         if (page.Site.EndsWith(".rss", StringComparison.OrdinalIgnoreCase))
             addressRow.Children.Add(Pill("FEED STORY", Accent, "#0b1b2c"));
+        var pageSite = page.Site;
+        if (tab.Ownership?.Owned != true)
+            addressRow.Children.Add(Btn("CLAIM SITE", () => OpenClaim(pageSite), accent: true));
+        addressRow.Children.Add(Btn("EDIT", () => NavigateToActive("jttp://" + pageSite + "/edit")));
         stack.Children.Add(addressRow);
 
         var title = T(page.Title, 30, Text, bold: true);
@@ -3102,6 +3137,9 @@ public sealed class BrowserWindow : Window
             case BlockKind.File:
                 stack.Children.Add(BuildFile(block));
                 break;
+            case BlockKind.Game:
+                stack.Children.Add(BuildGame(tab, block));
+                break;
         }
     }
 
@@ -3137,12 +3175,21 @@ public sealed class BrowserWindow : Window
             Spacing = 2,
             Children =
             {
-                T($"{id} · SEALED BLOB", 10.5, Amber, bold: true),
-                T($"{block.Mime ?? "application/octet-stream"} · {block.Bytes} bytes · AES-256-GCM", 9.5, Muted)
+                T($"{id} · {(block.Protected ? "PROTECTED BLOB" : "SEALED BLOB")}", 10.5, Amber, bold: true),
+                T($"{block.Mime ?? "application/octet-stream"} · {block.Bytes} bytes · AES-256-GCM" +
+                  (block.Protected ? " · needs this site's access key" : ""), 9.5, Muted)
             }
         };
+        TextBox? accessKey = null;
+        if (block.Protected)
+        {
+            accessKey = Input("", "access key");
+            accessKey.PasswordChar = '•';
+            accessKey.Margin = new Thickness(0, 6, 0, 0);
+            label.Children.Add(accessKey);
+        }
         row.Children.Add(label);
-        var unlock = Btn("UNLOCK", () => UnlockBlob(tab, id), accent: true);
+        var unlock = Btn("UNLOCK", () => UnlockBlob(tab, id, accessKey?.Text), accent: true);
         unlock.Height = 28;
         row.Children.Add(unlock);
         Grid.SetColumn(unlock, 1);
@@ -3411,12 +3458,12 @@ public sealed class BrowserWindow : Window
         }
     };
 
-    private void UnlockBlob(BrowserTab tab, string id)
+    private void UnlockBlob(BrowserTab tab, string id, string? accessKey = null)
     {
         try
         {
             var offset = _contentScroll.Offset;
-            var text = _session.UnlockBlob(id);
+            var text = _session.UnlockBlob(id, null, accessKey);
             tab.Unlocked.Add(id);
             tab.Texts[id] = text;
             _pageHost.Child = BuildPage(tab);
@@ -3461,6 +3508,7 @@ public sealed class BrowserWindow : Window
     private void OpenStoryEditor(BrowserTab tab, string host)
     {
         tab.ReturnAddress = tab.Page is not null ? tab.Address : HomeUrl;
+        tab.EditGate = null;
         tab.Draft = NewDraft(host);
         tab.Page = null;
         tab.Error = null;
@@ -5571,6 +5619,7 @@ public sealed class BrowserWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        StopAllGames();
         foreach (var tab in _tabs) ClearImages(tab);
         _http.Dispose();
         _mail?.Dispose();
@@ -5603,6 +5652,7 @@ public sealed class BrowserWindow : Window
         public string? TransportFingerprint { get; set; }
         public StoryDraft? Draft { get; set; }
         public string? BuiltIn { get; set; }
+        public string? EditGate { get; set; }
         public string PublisherSite { get; set; } = "";
         public string PublisherSpace { get; set; } = Nickles.DefaultSpace;
         public NicklesPublisher? PublisherResult { get; set; }

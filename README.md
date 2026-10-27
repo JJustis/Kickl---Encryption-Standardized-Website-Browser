@@ -60,6 +60,18 @@ sanitized inline HTML/SVG visuals are implemented.
   key, HKDF splits request/response keys, AES-256-GCM authenticates both frames, and RSA-PSS signs
   the response. The registry SHA-256 is still checked first; mismatches fail closed.
 
+- **Claiming a name** costs Bitcoin at the BTC shop, which hands the buyer an **ownership certificate**
+  (`.kcert`). Until then every name is free for anyone to create and edit; afterwards `jttp://name/edit` asks for
+  the certificate. See `docs/17` and `docs/23`.
+- **The Kickl CA** (`tools/Kickl.Ca`, `server/secca`) countersigns receipts automatically, writes every seal to an
+  append-only transparency log, and a sealed site shows **VERIFIED OWNER** to every visitor. Every CA signature is
+  hybrid Ed25519 + ML-DSA-65. `test-claims.bat` runs the whole flow against a throwaway test shop and test CA with no
+  Bitcoin. See `docs/23-certificate-authority.md`.
+- **Games** are sealed WebAssembly modules run in a capability-free sandbox (no imports, fuel-metered, memory-capped);
+  try `jttp://game-lab.custom`. See `docs/22-wasm-games.md`.
+- **Public and protected content.** Page text and public blobs are encrypted at rest but open to every reader;
+  `access="protected"` blobs need the site's access key. See `docs/20`.
+
 ### Try the playable demo
 
 From the repository root, run `dotnet run --project src/Kickl.Browser -- --demo --data .kickl-demo`.

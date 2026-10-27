@@ -114,6 +114,11 @@
           "SQLitePCLRaw.core": "2.1.13"
         }
       },
+      "Wasmtime": {
+        "type": "Transitive",
+        "resolved": "48.0.2",
+        "contentHash": "BBqIEIPSTQ5cCVfxk6kH4lYSwNiMQ8Bf2F8Sy1I8N0JkvrWYoqhG3ro41R3JhNStIs0tVbqajBXXKnahyxHn0g=="
+      },
       "xunit.abstractions": {
         "type": "Transitive",
         "resolved": "2.0.3",
@@ -159,7 +164,8 @@
         "dependencies": {
           "BouncyCastle.Cryptography": "[2.7.0, )",
           "HtmlAgilityPack": "[1.13.1, )",
-          "Microsoft.Data.Sqlite": "[10.0.13, )"
+          "Microsoft.Data.Sqlite": "[10.0.13, )",
+          "Wasmtime": "[48.0.2, )"
         }
       }
     }

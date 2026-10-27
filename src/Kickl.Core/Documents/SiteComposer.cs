@@ -36,7 +36,7 @@ public static class SiteComposer
     public const string ImageBlobId = "image";
     private static readonly string[] ImageExtensions = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"];
 
-    public static SealedDocument Publish(DataPaths paths, StoryDraft draft, byte[] master)
+    public static SealedDocument Publish(DataPaths paths, StoryDraft draft, byte[] master, Trust.CaSeal? seal = null)
     {
         if (!JttpUrl.TryParse("jttp://" + draft.Host + "/", out var url, out var error))
             throw new KmlException(error ?? "Invalid jttp name.");
@@ -105,7 +105,7 @@ public static class SiteComposer
             }
 
             var kml = BuildKml(host, draft, tags, hasImage, inlineHtml, ad);
-            return DocumentStore.PublishMarkup(paths, host, kml, master, pending);
+            return DocumentStore.PublishMarkup(paths, host, kml, master, pending, null, seal);
         }
         finally
         {
