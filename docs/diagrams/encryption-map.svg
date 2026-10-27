@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1720" viewBox="0 0 1400 1720" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="2140" viewBox="0 0 1400 2140" role="img" aria-labelledby="title desc">
   <title id="title">Kickl encryption map: where plaintext exists</title>
   <desc id="desc">Three lanes showing at-rest, in-memory and on-the-wire data, the key hierarchy, and an inventory of where plaintext exists.</desc>
-  <rect width="1400" height="1720" fill="#0b0f14"/>
+  <rect width="1400" height="2140" fill="#0b0f14"/>
 
   <style>
     .h { font: 700 16px "Segoe UI", Arial, sans-serif; fill: #e6edf3; }
@@ -26,7 +26,7 @@
   </defs>
 
   <text x="24" y="38" class="h" style="font-size:24px;letter-spacing:.04em">KICKL · ENCRYPTION MAP</text>
-  <text x="24" y="64" class="sub">Where plaintext exists, and where it does not. Slice build · 2026-10-24 · AES-256-GCM everywhere symmetric.</text>
+  <text x="24" y="64" class="sub">Where plaintext exists, and where it does not. Slice build · 2026-10-26 · AES-256-GCM everywhere symmetric; hybrid Ed25519 + ML-DSA-65 for the CA.</text>
 
   <g transform="translate(900,30)">
     <rect x="0" y="0" width="11" height="11" fill="#7ee787"/><text x="17" y="10" class="sub">plaintext</text>
@@ -95,11 +95,11 @@
   <g transform="translate(24,364)">
     <rect class="box" width="436" height="150" rx="8"/>
     <text x="16" y="26" class="h">2 · doc.json</text>
-    <text x="16" y="50" class="pt">Markup = KML PLAINTEXT   ← gap</text>
-    <text x="16" y="70" class="ct">blobs = AES-256-GCM(docKey)</text>
-    <text x="16" y="90" class="ct">DocKey = AES-256-GCM(master)</text>
-    <text x="16" y="110" class="m">integrity = SHA-256 over both</text>
-    <text x="16" y="132" class="warn">page text is readable without a key</text>
+    <text x="16" y="50" class="ct">Markup = AES-256-GCM(publicKey)</text>
+    <text x="16" y="70" class="ct">public blobs = AES-256-GCM(publicKey)</text>
+    <text x="16" y="90" class="ct">protected blobs = AES-256-GCM(accessKey)</text>
+    <text x="16" y="110" class="key">publicKey wrapped under a name-derived key</text>
+    <text x="16" y="132" class="warn">opens for any Kickl reader by design</text>
   </g>
 
   <g transform="translate(24,528)">
@@ -114,11 +114,11 @@
   <g transform="translate(24,654)">
     <rect class="box" width="436" height="150" rx="8"/>
     <text x="16" y="26" class="h">4 · owner USB key</text>
-    <text x="16" y="50" class="warn">RSA-3072 PKCS#8 — plaintext file</text>
+    <text x="16" y="50" class="ct">RSA-3072 PKCS#8 inside AES-GCM envelope</text>
     <text x="16" y="70" class="ct">WrappedKey = RSA-OAEP(AES-256 key)</text>
     <text x="16" y="90" class="ct">token = AES-GCM(AES data key)</text>
     <text x="16" y="110" class="m">token plaintext only during Prove</text>
-    <text x="16" y="132" class="warn">file perms only; no PIN wrap   ← gap</text>
+    <text x="16" y="132" class="key">envelope key = Argon2id(passphrase)</text>
   </g>
 
   <g transform="translate(24,818)">
@@ -170,7 +170,7 @@
     <text x="16" y="50" class="ct">docKey unwrap (AES-GCM)</text>
     <text x="16" y="70" class="ct">blob open (AES-GCM)</text>
     <text x="16" y="90" class="pt">plaintext byte[] → RAM</text>
-    <text x="16" y="110" class="warn">buffer wiped; decoded string is GC ← gap</text>
+    <text x="16" y="110" class="warn">byte[] wiped; UI string dropped on Lock</text>
   </g>
 
   <g transform="translate(482,876)">
@@ -215,7 +215,7 @@
     <rect class="box" width="436" height="112" rx="8"/>
     <text x="16" y="26" class="h">C · clearnet http(s)</text>
     <text x="16" y="50" class="warn">NOT Kickl. Leaves this stack.</text>
-    <text x="16" y="70" class="warn">system browser + TLS only</text>
+    <text x="16" y="70" class="warn">system browser + TLS only (BTC shop + CA too)</text>
     <text x="16" y="90" class="m">no registry, no seals, no Kickl keys</text>
   </g>
 
@@ -228,36 +228,91 @@
     <text x="16" y="112" class="m">metadata is not encrypted here</text>
   </g>
 
-  <!-- plaintext inventory -->
-  <text x="24" y="1150" class="h" style="font-size:20px">Where plaintext actually exists</text>
-  <text x="380" y="1150" class="sub">Read this as the complete list. Anything not here is ciphertext or derived material.</text>
+  <!-- ownership, the CA and games -->
+  <text x="24" y="1150" class="h" style="font-size:20px">Ownership, the CA, and games</text>
+  <text x="330" y="1150" class="sub">Claiming a name is paid at the BTC shop; the CA watches and seals; a game is a sandbox with nothing to reach.</text>
 
   <g transform="translate(24,1168)">
-    <rect class="box" width="660" height="228" rx="8" stroke="#2ea043"/>
+    <rect class="box" width="436" height="276" rx="8"/>
+    <text x="16" y="26" class="h">13 · ownership certificate (.kcert)</text>
+    <text x="16" y="50" class="m">shop signs site · order · claim no. · dates · token</text>
+    <text x="16" y="70" class="key">RSA-3072; the shop key is pinned on first contact</text>
+    <text x="16" y="90" class="key">token = 32 random bytes; the file holder owns the name</text>
+    <text x="16" y="110" class="ct">kept in your profile: AES-256-GCM (certs.kpf)</text>
+    <text x="16" y="130" class="pt">title.json holds only SHA-256(token)</text>
+    <text x="16" y="150" class="m">checked again every time you press edit</text>
+    <text x="16" y="174" class="warn">the receipt crosses the network over TLS only   ← limit</text>
+    <text x="16" y="194" class="warn">whoever steals the file owns the name</text>
+    <text x="16" y="216" class="m">unclaimed names stay free for anyone to edit</text>
+    <text x="16" y="238" class="m">claimed: publishing needs the current certificate</text>
+    <text x="16" y="258" class="m">a re-claim (higher claim no.) retires the old one</text>
+  </g>
+
+  <g transform="translate(482,1168)">
+    <rect class="box" width="436" height="276" rx="8"/>
+    <text x="16" y="26" class="h">14 · CA chain and seal</text>
+    <text x="16" y="50" class="key">root (offline) → issuing key (90 days) → seal</text>
+    <text x="16" y="70" class="ct">hybrid Ed25519 + ML-DSA-65: both halves must verify</text>
+    <text x="16" y="90" class="m">domain-separated: issuer cert · seal · log head · revocations</text>
+    <text x="16" y="110" class="m">RFC 6962 Merkle log; the seal carries its inclusion proof</text>
+    <text x="16" y="130" class="pt">the seal is public: it holds no token, only SHA-256(token)</text>
+    <text x="16" y="150" class="pt">published with the site; outside the integrity hash</text>
+    <text x="16" y="174" class="key">root public key is built into the browser</text>
+    <text x="16" y="194" class="m">the root private key is not on the CA server</text>
+    <text x="16" y="216" class="m">root revokes issuers + claims; an issuer, claims only</text>
+    <text x="16" y="238" class="m">the CA refuses clashing, stale or expired receipts</text>
+    <text x="16" y="258" class="warn">the issuing key is online (bounded by its 90 days)   ← limit</text>
+  </g>
+
+  <g transform="translate(940,1168)">
+    <rect class="box" width="436" height="276" rx="8"/>
+    <text x="16" y="26" class="h">15 · games (WebAssembly)</text>
+    <text x="16" y="50" class="ct">the module is a sealed blob (public or protected)</text>
+    <text x="16" y="70" class="m">imports nothing: no clock, network, files or host calls</text>
+    <text x="16" y="90" class="key">fuel per frame · memory cap · a trap halts only the game</text>
+    <text x="16" y="110" class="m">starts only when you press play; stops when you leave</text>
+    <text x="16" y="130" class="pt">game memory + its 240x160 picture: RAM only</text>
+    <text x="16" y="150" class="ct">save ≤ 4 KB per game: AES-256-GCM (game-saves.kpf)</text>
+    <text x="16" y="174" class="m">unclaimed names: 512 KiB · 8 MiB · 10 M per frame</text>
+    <text x="16" y="194" class="m">claimed names: 2 MiB · 32 MiB · 40 M per frame</text>
+    <text x="16" y="216" class="warn">a game can still draw anything, even misleading text</text>
+    <text x="16" y="238" class="warn">a heavy game slows the page, though it cannot freeze it</text>
+  </g>
+
+  <!-- plaintext inventory -->
+  <text x="24" y="1462" class="h" style="font-size:20px">Where plaintext actually exists</text>
+  <text x="380" y="1462" class="sub">Read this as the complete list. Anything not here is ciphertext or derived material.</text>
+
+  <g transform="translate(24,1480)">
+    <rect class="box" width="660" height="276" rx="8" stroke="#2ea043"/>
     <text x="18" y="30" class="invh" fill="#7ee787">PLAINTEXT IN RAM, BRIEFLY</text>
     <text x="18" y="58" class="inv">PIN while deriving the KEK</text>
     <text x="18" y="82" class="inv">master, session and doc key after unlock</text>
     <text x="18" y="106" class="inv">page markup + the one region you revealed</text>
     <text x="18" y="130" class="inv">blob text (byte[] wiped, decoded string is not)</text>
     <text x="18" y="154" class="inv">keystroke chars at Reveal</text>
-    <text x="18" y="178" class="inv">ownership token during Prove</text>
+    <text x="18" y="178" class="inv">ownership token while it is checked or sent to the CA</text>
     <text x="18" y="202" class="inv">hostname / search query during PFS</text>
+    <text x="18" y="226" class="inv">a running game: its memory and its picture</text>
+    <text x="18" y="250" class="inv">the cached shop and CA public keys</text>
   </g>
 
-  <g transform="translate(716,1168)">
-    <rect class="box" width="660" height="228" rx="8" stroke="#8a6d1f"/>
-    <text x="18" y="30" class="invh" fill="#f2cc60">PLAINTEXT ON DISK — DESIGN OR GAP</text>
-    <text x="18" y="58" class="inv">KML Markup inside doc.json                ← gap</text>
+  <g transform="translate(716,1480)">
+    <rect class="box" width="660" height="276" rx="8" stroke="#8a6d1f"/>
+    <text x="18" y="30" class="invh" fill="#f2cc60">PLAINTEXT ON DISK — PUBLIC METADATA</text>
+    <text x="18" y="58" class="inv">page title, blob mime and size in doc.json</text>
     <text x="18" y="82" class="inv">registry name / status / owner / badge ids</text>
     <text x="18" y="106" class="inv">salt, nonce, session id, version</text>
     <text x="18" y="130" class="inv">stego seed in the PNG tEXt chunk</text>
-    <text x="18" y="154" class="inv">owner USB RSA private key                  ← gap</text>
+    <text x="18" y="154" class="inv">profile names (directory names)</text>
     <text x="18" y="178" class="inv">anything you redirect CLI output into</text>
-    <text x="18" y="202" class="inv">—</text>
+    <text x="18" y="202" class="inv">CA seals (public, no token) and the revocation list</text>
+    <text x="18" y="226" class="inv">pinned shop key · CA public keys · title.json (hash only)</text>
+    <text x="18" y="250" class="inv">the CA ledger: sites, claim numbers, times, log positions</text>
   </g>
 
-  <g transform="translate(24,1412)">
-    <rect class="box" width="660" height="216" rx="8" stroke="#1f6feb"/>
+  <g transform="translate(24,1790)">
+    <rect class="box" width="660" height="240" rx="8" stroke="#1f6feb"/>
     <text x="18" y="30" class="invh" fill="#79c0ff">NEVER PLAINTEXT AT REST</text>
     <text x="18" y="58" class="inv">master key · session key · doc key</text>
     <text x="18" y="82" class="inv">blob contents</text>
@@ -265,10 +320,12 @@
     <text x="18" y="130" class="inv">ownership token</text>
     <text x="18" y="154" class="inv">keystroke cells</text>
     <text x="18" y="178" class="inv">PFS lookup traffic · mesh frames</text>
+    <text x="18" y="202" class="inv">page markup · protected blobs (need the access key)</text>
+    <text x="18" y="226" class="inv">ownership certificates · game saves</text>
   </g>
 
-  <g transform="translate(716,1412)">
-    <rect class="box" width="660" height="216" rx="8" stroke="#8b2f2f"/>
+  <g transform="translate(716,1790)">
+    <rect class="box" width="660" height="240" rx="8" stroke="#8b2f2f"/>
     <text x="18" y="30" class="invh" fill="#ff7b72">OUTSIDE THE CRYPTO BOUNDARY</text>
     <text x="18" y="58" class="inv">swap / hibernation / crash dumps</text>
     <text x="18" y="82" class="inv">screen, GPU, compositor, screenshots</text>
@@ -276,11 +333,14 @@
     <text x="18" y="130" class="inv">IP addresses, DNS, traffic shape</text>
     <text x="18" y="154" class="inv">remote server memory and backups</text>
     <text x="18" y="178" class="inv">a compromised OS, firmware, or USB port</text>
+    <text x="18" y="202" class="inv">the TLS link to the BTC shop and the CA (receipt travels here)</text>
+    <text x="18" y="226" class="inv">anyone who copies your .kcert file</text>
   </g>
 
-  <g transform="translate(24,1640)">
-    <rect x="0" y="0" width="1352" height="64" rx="6" fill="#141b25" stroke="#263241"/>
+  <g transform="translate(24,2050)">
+    <rect x="0" y="0" width="1352" height="86" rx="6" fill="#141b25" stroke="#263241"/>
     <text x="16" y="26" class="note">Rule: if a byte is not in the green or amber lists, it is not plaintext.</text>
-    <text x="16" y="48" class="note">Slice caveat: page markup is public structure at rest; sealing whole pages is a tracked gap (docs/18).</text>
+    <text x="16" y="48" class="note">Public pages are sealed at rest but open for any reader by design; only the access key protects protected blobs.</text>
+    <text x="16" y="70" class="note">A seal proves the CA saw and logged a genuine receipt, not who the buyer is. The receipt token reaches the CA over TLS only; the CA keeps a hash, never the token.</text>
   </g>
 </svg>
