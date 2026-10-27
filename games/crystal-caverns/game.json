@@ -1,0 +1,8 @@
+{
+  "title": "Crystal Caverns",
+  "tagline": "a first-person 3D maze in 15 KB: find the crystals, reach the exit",
+  "author": "kickl",
+  "accent": "#7be0ff",
+  "order": 1,
+  "build": "caverns"
+}

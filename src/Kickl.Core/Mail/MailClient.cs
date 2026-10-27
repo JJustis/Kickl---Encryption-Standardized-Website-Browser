@@ -21,6 +21,8 @@ public sealed class MailServiceException(string message, HttpStatusCode? status 
 public sealed class MailClient : IDisposable
 {
     public const string DefaultBase = "https://secupgrade.com/apicalls";
+    private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(3);
+    internal const int MaxAttempts = 4;
     private readonly HttpClient _http;
     private readonly Uri _baseUri;
     private readonly bool _ownsHttp;
@@ -28,7 +30,10 @@ public sealed class MailClient : IDisposable
     public MailClient(string? baseUrl = null, HttpClient? http = null)
     {
         _ownsHttp = http is null;
-        _http = (http ?? new HttpClient { Timeout = TimeSpan.FromSeconds(15) }).Limit(HttpLimits.Mail);
+        // A connection that has not been made in a few seconds is usually a dropped first packet (a router that reflects its own public
+        // address back into the LAN does this), not a slow server. Give up on it quickly and let the retry open a fresh one.
+        _http = (http ?? new HttpClient(new SocketsHttpHandler { ConnectTimeout = ConnectTimeout, AllowAutoRedirect = false })
+        { Timeout = TimeSpan.FromSeconds(20) }).Limit(HttpLimits.Mail);
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("KicklMail/0.1");
         var baseValue = baseUrl ?? DefaultBase;
         _baseUri = new Uri(baseValue.EndsWith('/') ? baseValue : baseValue + "/", UriKind.Absolute);
@@ -38,10 +43,37 @@ public sealed class MailClient : IDisposable
         CancellationToken cancellationToken = default)
     {
         var tokenHash = Hashing.Hex(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
-        using var response = await PostJsonAsync(new Uri(_baseUri, "v1/mail/identity"),
-            new { bundle, tokenHash }, cancellationToken).ConfigureAwait(false);
-        await ReadObjectAsync(response, "identity", cancellationToken).ConfigureAwait(false);
+        // Registering is an upsert, so doing it again after a dropped connection is safe
+        await WithRetryAsync(async () =>
+        {
+            using var response = await PostJsonAsync(new Uri(_baseUri, "v1/mail/identity"),
+                new { bundle, tokenHash }, cancellationToken).ConfigureAwait(false);
+            await ReadObjectAsync(response, "identity", cancellationToken).ConfigureAwait(false);
+            return true;
+        }, cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Run a request that is safe to repeat. A failed connection or a timeout (the network is flaky, not the answer) is retried up to
+    /// <see cref="MaxAttempts"/> times; anything the server actually answered, even with an error, is final.
+    /// </summary>
+    private static async Task<T> WithRetryAsync<T>(Func<Task<T>> operation, CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await operation().ConfigureAwait(false);
+            }
+            catch (Exception ex) when (attempt < MaxAttempts && !cancellationToken.IsCancellationRequested && IsTransient(ex))
+            {
+                await Task.Delay(200 * attempt, cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static bool IsTransient(Exception ex) =>
+        ex is HttpRequestException { StatusCode: null } || ex is TaskCanceledException { InnerException: TimeoutException } || ex is TimeoutException;
 
     public async Task<MailIdentityBundle> LookupAsync(string shortId,
         CancellationToken cancellationToken = default)
@@ -50,15 +82,16 @@ public sealed class MailClient : IDisposable
         if (normalized.Length != 8)
             throw new ArgumentException("A PFS ID is exactly eight digits.", nameof(shortId));
 
-        using var response = await _http.GetAsync(
-            new Uri(_baseUri, "v1/mail/lookup?short=" + normalized), cancellationToken)
-            .ConfigureAwait(false);
-        using var document = await ParseAsync(response, "lookup", cancellationToken)
-            .ConfigureAwait(false);
+        using var document = await WithRetryAsync(async () =>
+        {
+            using var response = await _http.GetAsync(
+                new Uri(_baseUri, "v1/mail/lookup?short=" + normalized), cancellationToken)
+                .ConfigureAwait(false);
+            return await ParseAsync(response, "lookup", cancellationToken).ConfigureAwait(false);
+        }, cancellationToken).ConfigureAwait(false);
         if (!document.RootElement.TryGetProperty("bundle", out var bundleElement)
             || bundleElement.ValueKind != JsonValueKind.Object)
-            throw new MailServiceException("The Pinwheel lookup did not return a mail identity.",
-                response.StatusCode);
+            throw new MailServiceException("The Pinwheel lookup did not return a mail identity.");
 
         var bundle = bundleElement.Deserialize<MailIdentityBundle>(MailJson.Options)
                      ?? throw new MailServiceException("The Pinwheel mail identity is unreadable.");
@@ -84,6 +117,7 @@ public sealed class MailClient : IDisposable
         // published. The certificate chain and host name mean nothing for a device on a LAN address; the pin is the whole trust decision.
         using var handler = new SocketsHttpHandler
         {
+            UseProxy = false,                // a device on the LAN is reached directly, never through a proxy
             AllowAutoRedirect = false,
             ConnectTimeout = TimeSpan.FromSeconds(10),
             SslOptions = new System.Net.Security.SslClientAuthenticationOptions

@@ -648,6 +648,29 @@ public sealed class BrowserSession : IDisposable
         }
     }
 
+    /// <summary>The "site" under which games from the games folder keep their saves (they do not belong to any page).</summary>
+    public const string LibrarySite = "games";
+
+    /// <summary>
+    /// Load a game from the games folder: the same sandbox and the same limits as a game on an unclaimed page, and a save that lives, encrypted,
+    /// in this profile only. The caller disposes the game.
+    /// </summary>
+    public WasmGame LoadLibraryGame(GameEntry entry)
+    {
+        var bytes = GameLibrary.ReadModule(entry);
+        var game = WasmGame.Load(bytes, GameLimits.Unclaimed);
+        try
+        {
+            game.RestoreSave(LoadGameSave(LibrarySite, entry.Id));
+            return game;
+        }
+        catch
+        {
+            game.Dispose();
+            throw;
+        }
+    }
+
     private string GameSavesPath => Path.Combine(_paths.ProfileRoot, "private", "game-saves.kpf");
 
     private Dictionary<string, byte[]> LoadGameSaves()

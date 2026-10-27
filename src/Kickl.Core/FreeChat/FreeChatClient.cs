@@ -154,6 +154,28 @@ public sealed class FreeChatClient : IDisposable
         return false;
     }
 
+    /// <summary>
+    /// A client for this profile: it remembers the member keys the profile has already seen, signs the messages it sends with the profile's signing
+    /// key, and tells <paramref name="pinsChanged"/> whenever a new key is learned so the caller can save it.
+    /// </summary>
+    public static FreeChatClient ForProfile(IReadOnlyDictionary<string, string> pins, byte[] signingKey,
+        Action<IReadOnlyDictionary<string, string>> pinsChanged, string? apiBase = null)
+    {
+        var client = new FreeChatClient(apiBase);
+        try
+        {
+            client.LoadPins(pins);
+            client.UseSigningKey(signingKey);
+            client.PinsChanged += () => pinsChanged(client.KeyPins);
+            return client;
+        }
+        catch
+        {
+            client.Dispose();
+            throw;
+        }
+    }
+
     public FreeChatUser? User { get; private set; }
     public int SessionId { get; private set; }
     public long SessionStartUnix { get; private set; }

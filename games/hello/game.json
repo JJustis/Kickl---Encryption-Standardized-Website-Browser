@@ -1,0 +1,8 @@
+{
+  "title": "Hello",
+  "tagline": "the smallest game: a gradient and a bouncing square",
+  "author": "kickl",
+  "accent": "#7ee787",
+  "order": 4,
+  "build": "01-hello"
+}

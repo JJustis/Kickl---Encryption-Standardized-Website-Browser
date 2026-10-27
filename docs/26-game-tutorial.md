@@ -395,7 +395,45 @@ whether the game halted. The exit code is non-zero if the browser would refuse t
 
 ## 8. Publish it
 
-A game lives on a page. Make a site folder:
+There are two ways to put a game in front of people. The first is the one to use.
+
+### 8.1 The quick way: the games folder
+
+Drop a folder into `games/` and the Kickl Browser lists it on its home page, in the arcade, the next time the home page is shown. No page, no publishing:
+
+```
+games/
+  my-game/
+    game.wasm       your compiled game (required)
+    game.json       how it appears (optional)
+```
+
+```json
+{ "title": "My Game", "tagline": "one line about it", "author": "you", "accent": "#7be0ff", "order": 10 }
+```
+
+Every field is optional; without a title the folder name is used (`my-game` becomes "My Game"), and `order` puts smaller numbers first. The folder name is the
+game's id: lowercase letters, digits and hyphens. Clicking the card opens a game tab and runs it in the sandbox, with the same limits as a game on a page, and its
+save is kept, encrypted, in the reader's profile.
+
+The browser looks in three places, most personal first: a `games` folder inside **your data folder** (add games without touching the install), a `games`
+folder beside the program, and the `games` folder of a source checkout. A game found in an earlier place hides the same id in a later one.
+
+If the tutorial's toolchain built your game, add `"build": "my-game"` to its `game.json` (the name of the file in `assembly/`, without `.ts`) and `npm run build`
+installs the fresh module into the folder for you; that is how `games/crystal-caverns/` is kept up to date. `kickl games` shows what the browser found and why a game
+was refused (too big, empty):
+
+```
+kickl games
+kickl game-check games/my-game/game.wasm --script "none*10,start*3,up*40"
+```
+
+The repository's test-suite loads every game in `games/` and checks that it runs, stays under 80% of the budget and does not allocate, so a broken game cannot be
+committed unnoticed.
+
+### 8.2 On a page
+
+A game can also live on a page, sealed with the page's other content (this is how a game is **sold**, see below). Make a site folder:
 
 ```
 sites/mygame.custom/
@@ -433,6 +471,8 @@ kickl open jttp://mygame.custom/ --pin YOUR-PIN
 Then start the Kickl Browser, sign in, open `jttp://mygame.custom/` and press **PLAY**. The game is sealed in the page like any other file, covered by the page's
 content hash, and **does not start until the reader presses PLAY**. It stops when they leave the page, change tab, lock the profile or close the window.
 
+- **Which to choose.** The games folder is for games that are simply there to be played. Put a game on a page when it belongs with text, when the page's
+  owner should be shown as the author, or when you want to **sell** it.
 - **Selling a game.** Put `access="protected"` on the `<game>` and the module only opens with an access key. Combine it with a `<shop>` (see
   [`docs/27-shop-syntax.md`](27-shop-syntax.md)) and you can sell a game for Bitcoin and send the buyer the key.
 - **Bigger games.** A *claimed* name (paid for at the BTC shop) may run games of up to 2 MiB with 32 MiB of memory and 40 M instructions a frame.

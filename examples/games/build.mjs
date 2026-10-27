@@ -2,7 +2,7 @@
 // it imports nothing. Usage:  npm run build            (all games)
 //                             node build.mjs 01-hello  (one game)
 import { spawnSync } from "node:child_process";
-import { readFileSync, readdirSync, mkdirSync } from "node:fs";
+import { readFileSync, readdirSync, mkdirSync, copyFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -15,6 +15,18 @@ const entries = readdirSync(join(here, "assembly"))
   .map((f) => f.slice(0, -3));
 const wanted = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const todo = wanted.length ? wanted : entries;
+
+// The games folder: a folder there whose game.json says  "build": "<name>"  gets the freshly built module installed as game.wasm,
+// so building a game and publishing it to the browser's home page is one step. (The browser ignores the "build" field.)
+const gamesDir = join(here, "..", "..", "games");
+const installTargets = new Map();
+if (existsSync(gamesDir)) {
+  for (const folder of readdirSync(gamesDir, { withFileTypes: true })) {
+    const meta = join(gamesDir, folder.name, "game.json");
+    if (!folder.isDirectory() || !existsSync(meta)) continue;
+    try { const build = JSON.parse(readFileSync(meta, "utf8")).build; if (build) installTargets.set(build, folder.name); } catch { /* not ours */ }
+  }
+}
 
 let failed = false;
 for (const name of todo) {
@@ -42,6 +54,11 @@ for (const name of todo) {
     console.error(`x ${name}: ${imports.length ? "imports " + imports.map((i) => i.module + "." + i.name).join(", ") : ""} ${missing.length ? "missing exports " + missing.join(", ") : ""}`);
   } else {
     console.log(`ok ${name}.wasm  ${size.toLocaleString()} bytes, no imports`);
+    const target = installTargets.get(name);
+    if (target) {
+      copyFileSync(out, join(gamesDir, target, "game.wasm"));
+      console.log(`   installed into games/${target}/game.wasm`);
+    }
   }
 }
 process.exit(failed ? 1 : 0);

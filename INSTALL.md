@@ -86,6 +86,9 @@ Sign in with the fixed key **`1234`**. Use the demo for experiments only, never 
 | `jttp://sealed-lab.custom` | click-to-unlock sealed images |
 | `jttp://game-lab.custom` | a playable WebAssembly game |
 | `jttp://caverns.custom` | Crystal Caverns, a first-person 3D game (the showpiece of what a sandboxed game can do) |
+
+**Games.** The arcade on the home page lists every game in the `games/` folder (Crystal Caverns, Coin Dash, Plasma, Hello). To add one, put a folder with a
+`game.wasm` in `games/`, or in a `games` folder inside your data folder. `kickl games` lists what is found. See `games/README.md`.
 | `jttp://btcshop.com` | an example Bitcoin shop (testnet); the demo access key for its sealed file is `demo-paid` |
 
 **Where your data goes.** `--data DIR` picks the folder; the default is `%LOCALAPPDATA%\KicklBrowser`

@@ -54,10 +54,9 @@ public sealed partial class BrowserWindow : Window
 
     private static readonly HomeGame[] HomeGames =
     [
+        // The two games built into the browser. Every other game on the home page comes from the games folder (GameLibrary).
         new("tic-tac-toe", "TIC-TAC-TOE", "three in a row", "you", "PLAYABLE · native demo", "#78c8c8", true),
-        new("memory", "MEMORY", "match the pairs", "arcade", "PLAYABLE · OFFLINE", "#ff7a64", true),
-        new("snake", "SNAKE", "longer every bite", "arcade", "QUEUED · wasm-1", "#f2cc60", false),
-        new("2048", "2048", "merge the tiles", "arcade", "QUEUED · wasm-1", "#8fa8bd", false)
+        new("memory", "MEMORY", "match the pairs", "arcade", "PLAYABLE · OFFLINE", "#ff7a64", true)
     ];
     private const string Red = "#ff7b72";
 
@@ -190,15 +189,11 @@ public sealed partial class BrowserWindow : Window
     /// <summary>A new chat client remembers the member keys this profile has already seen, and tells us when it learns one.</summary>
     private FreeChatClient NewChatClient()
     {
-        var client = NewChatClient();
-        client.LoadPins(_chatKeyPins);
-        client.UseSigningKey(_chatSigningKey ??= LoadOrMakeChatSigningKey());
-        client.PinsChanged += () =>
+        return FreeChatClient.ForProfile(_chatKeyPins, _chatSigningKey ??= LoadOrMakeChatSigningKey(), pins =>
         {
-            _chatKeyPins = client.KeyPins.ToDictionary(k => k.Key, k => k.Value, StringComparer.OrdinalIgnoreCase);
+            _chatKeyPins = pins.ToDictionary(k => k.Key, k => k.Value, StringComparer.OrdinalIgnoreCase);
             SaveChatPrefs();
-        };
-        return client;
+        });
     }
     private DispatcherTimer? _chatTimer;
     private bool _chatBusy;
@@ -277,6 +272,14 @@ public sealed partial class BrowserWindow : Window
         RefreshRegistryNews();
         StartTimers();
         if (string.IsNullOrWhiteSpace(startUrl)) NewTab();
+        else if (startUrl.StartsWith("game:", StringComparison.OrdinalIgnoreCase))
+        {
+            // --open game:crystal-caverns starts straight into a game from the games folder
+            NewTab();
+            var wanted = startUrl[5..].Trim().ToLowerInvariant();
+            if (Active is { } first && LibraryGames().FirstOrDefault(g => g.Id == wanted) is { } entry) OpenLibraryGame(first, entry);
+            else SetStatus("no game called \"" + wanted + "\" in the games folder");
+        }
         else NewTab(startUrl);
 
         if (!string.IsNullOrWhiteSpace(App.StartSearch) && Active is { Page: null, Game: null } home)
@@ -2426,6 +2429,7 @@ public sealed partial class BrowserWindow : Window
 
     private void OpenHome(BrowserTab tab, bool resetSearch = true)
     {
+        StopAllGames();
         tab.Page = null;
         tab.Draft = null;
         tab.Error = null;
@@ -4079,14 +4083,15 @@ public sealed partial class BrowserWindow : Window
         var panel = new StackPanel { Spacing = 9 };
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         header.Children.Add(T("ARCADE", 12, Accent, mono: true, bold: true));
-        var count = T($"{HomeGames.Length} games", 9, Muted, mono: true);
+        var library = LibraryGames();
+        var count = T($"{library.Count + HomeGames.Length} games", 9, Muted, mono: true);
         count.HorizontalAlignment = HorizontalAlignment.Right;
         header.Children.Add(count);
         Grid.SetColumn(count, 1);
         panel.Children.Add(header);
         panel.Children.Add(T("THE GAMES ARRAY", 20, Text, bold: true));
         panel.Children.Add(T(
-            "Signed game bundles will run in the separate wasm-1 sandbox. The first native demo is playable now.",
+            "Every game in the games folder is listed here and runs in its own sandbox: no network, no files, no clock. Drop a folder into games/ to add one.",
             10, Muted).WithWrap());
 
         var cards = new WrapPanel
@@ -4095,6 +4100,8 @@ public sealed partial class BrowserWindow : Window
             ItemWidth = 196,
             ItemHeight = 118
         };
+        foreach (var game in library)
+            cards.Children.Add(LibraryCard(game));
         foreach (var game in HomeGames)
             cards.Children.Add(GameCard(game));
         panel.Children.Add(cards);
@@ -4554,6 +4561,9 @@ public sealed partial class BrowserWindow : Window
 
     private Control BuildGame(BrowserTab tab)
     {
+        if (tab.Game!.StartsWith(LibraryPrefix, StringComparison.Ordinal))
+            return BuildLibraryGame(tab);
+
         var stack = new StackPanel
         {
             Spacing = 12,

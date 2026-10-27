@@ -1,0 +1,8 @@
+{
+  "title": "Coin Dash",
+  "tagline": "grab coins for 20 seconds; your best score is saved",
+  "author": "kickl",
+  "accent": "#f2cc60",
+  "order": 2,
+  "build": "02-mover"
+}

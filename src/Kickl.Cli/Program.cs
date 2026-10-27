@@ -61,6 +61,7 @@ internal static class Program
             "registry" => Registry(rest),
             "demo" => Demo(rest),
             "game-check" => GameCheckCommand(rest),
+            "games" => GamesCommand(rest),
             "shell" => Shell(rest),
             "help" or "--help" or "-h" => Help(),
             _ => Unknown(command)
@@ -1087,6 +1088,7 @@ Kickl Browser � slice CLI
   kickl registry  sync --url URL --key FILE [--data DIR]
   kickl registry  status [--data DIR]
   kickl demo      [--dir DIR]
+  kickl games      [--dir DIR] [--data DIR]
   kickl game-check <game.wasm> [--script STEPS] [--seed N] [--claimed] [--png FILE] [--scale N]
   kickl shell     [--data DIR]
 
@@ -1153,6 +1155,27 @@ jttp:// names resolve through the local registry mirror; they never touch HTTP.
             Console.WriteLine($"picture     {png} ({w * scale}x{h * scale})");
         }
         return report.Halted ? 3 : 0;
+    }
+
+    /// <summary>List the games the browser's home page would show, and where it looked. See games/README.md.</summary>
+    private static int GamesCommand(string[] args)
+    {
+        var opts = Options.Parse(args);
+        IReadOnlyList<string> roots = opts.Get("dir") is { Length: > 0 } dir
+            ? [Path.GetFullPath(dir)]
+            : Kickl.Core.Games.GameLibrary.DefaultRoots(DataDir(opts));
+        Console.WriteLine("looking in:");
+        foreach (var root in roots) Console.WriteLine($"  {root}{(Directory.Exists(root) ? "" : "   (not there)")}");
+        var games = Kickl.Core.Games.GameLibrary.Scan(roots);
+        Console.WriteLine();
+        if (games.Count == 0) Console.WriteLine("no games found. Put a folder with a game.wasm in one of the places above.");
+        foreach (var game in games)
+        {
+            Console.WriteLine($"{game.Id,-22} {game.Title}  ·  @{game.Author}  ·  {game.Bytes:N0} bytes");
+            Console.WriteLine($"{"",-22} {game.Tagline}");
+            Console.WriteLine($"{"",-22} {(game.Error is null ? "ok" : "CANNOT RUN: " + game.Error)}   {game.Folder}");
+        }
+        return games.Any(g => g.Error is not null) ? 3 : 0;
     }
 
     private static int Unknown(string command)

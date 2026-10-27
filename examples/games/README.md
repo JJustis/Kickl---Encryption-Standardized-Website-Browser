@@ -22,4 +22,7 @@ The compiled games are committed in `build/`, so you can run them without instal
 dotnet run --project ../../src/Kickl.Cli -c Release -- game-check build/caverns.wasm --script "none*20,start*3,up*60" --png caverns.png
 ```
 
+`npm run build` also installs each game into the browser's **games folder** (`../../games/<id>/game.wasm`) when that folder's `game.json` has a
+`"build": "<name>"` field naming it; the browser lists everything in `games/` on its home page.
+
 Files beginning with `_` are modules, not games; `build.mjs` builds every other `.ts` file in `assembly/`.

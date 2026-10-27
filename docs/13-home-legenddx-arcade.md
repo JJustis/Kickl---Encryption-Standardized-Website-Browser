@@ -15,6 +15,9 @@ The demo profile starts at a sign-in gate; enter the fixed sample key `1234`. It
 experimentation, so do not put personal data in it. For a personal local profile, omit `--demo`; the
 browser opens the create/sign-in gate instead.
 
+- **The games folder:** the **ARCADE** pane lists every game found in the `games/` folder (Crystal Caverns, Coin Dash, Plasma and Hello ship with the
+  repository), then the two native demos below. Click a card to play it in its WebAssembly sandbox. **Adding a game is putting a folder with a `game.wasm` in `games/`**
+  (or in a `games` folder in your data folder); see `games/README.md`. Start straight into one with `--open game:crystal-caverns`.
 - **Tic-Tac-Toe:** open the **ARCADE** home pane and select the native game. Play X against a small
   local CPU opponent; **PLAY AGAIN** resets the board.
 - **Memory Match:** select **MEMORY** in the same pane. Flip cards to find eight pairs, watch the move
@@ -27,8 +30,8 @@ browser opens the create/sign-in gate instead.
 - **Publications:** use the right-hand stream to browse the configured RSS/site cards. Opening a card
   requires an explicit confirmation.
 
-The **SNAKE** and **2048** cards are still placeholders for the future sandbox runtime; they are not
-playable yet. The phonebook, vault, mail/chat, and clearnet mini-browser are also not full products.
+The **SNAKE** and **2048** cards are still placeholders; they are not
+playable yet. (Games now run on their own pages, as Crystal Caverns does; see `docs/26-game-tutorial.md` to write one.) The phonebook, vault, mail/chat, and clearnet mini-browser are also not full products.
 
 ## 1. Layout
 

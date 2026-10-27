@@ -405,3 +405,121 @@ public sealed class ChatSignatureTests
         Assert.Contains("alice", client.KeyAlerts);
     }
 }
+
+public sealed class FreeChatForProfileTests
+{
+    private static readonly System.Reflection.MethodInfo CheckPin = typeof(Kickl.Core.FreeChat.FreeChatClient).GetMethod("CheckPin",
+        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+
+    [Fact]
+    public void ForProfile_BuildsAWorkingClient_WithThePinsAndTheSigningKeyWired()
+    {
+        var known = new string('a', 64);
+        IReadOnlyDictionary<string, string>? saved = null;
+        using var client = Kickl.Core.FreeChat.FreeChatClient.ForProfile(
+            new Dictionary<string, string> { ["bob"] = known }, Kickl.Core.FreeChat.FreeChatClient.NewSigningKey(),
+            pins => saved = pins, "https://chat.example.com/api/");
+
+        Assert.Equal(known, client.KeyPins["bob"]);                      // what the profile already knew is loaded
+        Assert.Null(saved);
+
+        // learning a member's key for the first time reaches the caller, so the profile can save it
+        using var kem = System.Security.Cryptography.MLKem.GenerateKey(System.Security.Cryptography.MLKemAlgorithm.MLKem1024);
+        var alice = new Kickl.Core.FreeChat.FreeChatMember(2, "alice", Convert.ToBase64String(kem.ExportEncapsulationKey()), false);
+        Assert.True((bool) CheckPin.Invoke(client, [alice])!);
+        Assert.NotNull(saved);
+        Assert.True(saved!.ContainsKey("alice"));
+        Assert.Equal(known, saved["bob"]);
+    }
+
+    [Fact]
+    public void ForProfile_RefusesABadSigningKey_AndAnInsecureServer_WithoutLeakingAClient()
+    {
+        Assert.ThrowsAny<Exception>(() => Kickl.Core.FreeChat.FreeChatClient.ForProfile(
+            new Dictionary<string, string>(), [1, 2, 3], _ => { }, "https://chat.example.com/api/"));
+        Assert.Throws<Kickl.Core.FreeChat.FreeChatException>(() => Kickl.Core.FreeChat.FreeChatClient.ForProfile(
+            new Dictionary<string, string>(), Kickl.Core.FreeChat.FreeChatClient.NewSigningKey(), _ => { }, "http://chat.example.com/api/"));
+    }
+}
+
+public sealed class MailClientRetryTests
+{
+    private sealed class Scripted(Func<int, HttpResponseMessage> script) : HttpMessageHandler
+    {
+        public int Calls;
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var n = Interlocked.Increment(ref Calls);
+            return Task.FromResult(script(n));
+        }
+    }
+
+    private static HttpResponseMessage Json(System.Net.HttpStatusCode code, string body) =>
+        new(code) { Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json") };
+
+    private static string LookupBody(MailIdentity id) =>
+        System.Text.Json.JsonSerializer.Serialize(new { bundle = id.Bundle }, MailJson.Options);
+
+    [Fact]
+    public async Task ADroppedConnection_IsRetried_AndTheLookupSucceeds()
+    {
+        using var id = MailIdentity.Generate("rt");
+        var handler = new Scripted(n => n < 3 ? throw new HttpRequestException("connection dropped") : Json(System.Net.HttpStatusCode.OK, LookupBody(id)));
+        using var client = new MailClient("https://example.test/api", new HttpClient(handler));
+        var bundle = await client.LookupAsync(id.Bundle.ShortId);
+        Assert.Equal(id.Bundle.ShortId, bundle.ShortId);
+        Assert.Equal(3, handler.Calls);
+    }
+
+    [Fact]
+    public async Task ATimeout_IsRetried()
+    {
+        using var id = MailIdentity.Generate("rt");
+        var handler = new Scripted(n => n == 1
+            ? throw new TaskCanceledException("timed out", new TimeoutException())
+            : Json(System.Net.HttpStatusCode.OK, LookupBody(id)));
+        using var client = new MailClient("https://example.test/api", new HttpClient(handler));
+        await client.LookupAsync(id.Bundle.ShortId);
+        Assert.Equal(2, handler.Calls);
+    }
+
+    [Fact]
+    public async Task AnAnswerFromTheServer_EvenAnError_IsFinal_AndNotRetried()
+    {
+        var handler = new Scripted(_ => Json(System.Net.HttpStatusCode.NotFound, "{\"error\":\"No mail identity has that PFS id.\"}"));
+        using var client = new MailClient("https://example.test/api", new HttpClient(handler));
+        var ex = await Assert.ThrowsAsync<MailServiceException>(() => client.LookupAsync("12345678"));
+        Assert.Contains("No mail identity", ex.Message);
+        Assert.Equal(1, handler.Calls);
+    }
+
+    [Fact]
+    public async Task ANetworkThatNeverWorks_GivesUpAfterTheLimit_WithTheRealError()
+    {
+        var handler = new Scripted(_ => throw new HttpRequestException("no route"));
+        using var client = new MailClient("https://example.test/api", new HttpClient(handler));
+        await Assert.ThrowsAsync<HttpRequestException>(() => client.LookupAsync("12345678"));
+        Assert.Equal(MailClient.MaxAttempts, handler.Calls);
+    }
+
+    [Fact]
+    public async Task ACancelledRequest_IsNotRetried()
+    {
+        var handler = new Scripted(_ => throw new HttpRequestException("x"));
+        using var client = new MailClient("https://example.test/api", new HttpClient(handler));
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.LookupAsync("12345678", cts.Token));
+        Assert.True(handler.Calls <= 1);
+    }
+
+    [Fact]
+    public async Task RegisteringAnIdentity_IsRetriedToo()
+    {
+        using var id = MailIdentity.Generate("rt");
+        var handler = new Scripted(n => n < 2 ? throw new HttpRequestException("dropped") : Json(System.Net.HttpStatusCode.Created, "{\"ok\":true}"));
+        using var client = new MailClient("https://example.test/api", new HttpClient(handler));
+        await client.RegisterAsync(id.Bundle, id.Token);
+        Assert.Equal(2, handler.Calls);
+    }
+}

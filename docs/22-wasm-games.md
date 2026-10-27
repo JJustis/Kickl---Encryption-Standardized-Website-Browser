@@ -49,6 +49,12 @@ halts and the reader sees the reason. Memory growth is capped. Deep recursion tr
 
 A trap or limit halts only that game. Nothing it does reaches the host.
 
+## 4.0 The games folder
+
+A game does not have to live on a page. Put a folder with a `game.wasm` (and an optional `game.json`) in `games/`, in a `games` folder in your data folder, or in
+one beside the program, and the browser lists it on its home page. It runs with the limits of an unclaimed name, with its save kept per game in the reader's profile.
+See `games/README.md` and `docs/26-game-tutorial.md` §8.1. The rest of this document applies unchanged.
+
 ## 4. Putting a game on a page
 
 Put the compiled module in the site's `blobs/` folder (the file name, without extension, is its id) and add

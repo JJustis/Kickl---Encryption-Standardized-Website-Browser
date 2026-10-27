@@ -1,0 +1,8 @@
+{
+  "title": "Plasma",
+  "tagline": "a full-screen effect: what the instruction budget buys",
+  "author": "kickl",
+  "accent": "#d2a8ff",
+  "order": 3,
+  "build": "03-plasma"
+}

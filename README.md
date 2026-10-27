@@ -107,8 +107,10 @@ the CA and claiming names are optional. **Full instructions, requirements and tr
   exact amount, and gives the buyer a payment link to copy into a wallet; it never sends or sees a payment. A product can carry a sealed
   file that opens with an access key the seller sends after payment. Try `jttp://btcshop.com` (testnet). See `docs/27-shop-syntax.md`.
 - **Games** are sealed WebAssembly modules run in a capability-free sandbox (no imports, fuel-metered, memory-capped);
-  try `jttp://game-lab.custom`, or `jttp://caverns.custom`, a first-person 3D maze game in 15 KB. To write your own, follow the step-by-step
-  tutorial in `docs/26-game-tutorial.md` (code in `examples/games/`); `kickl game-check` measures a game against the budget. Reference: `docs/22-wasm-games.md`.
+  try `jttp://game-lab.custom`, or `jttp://caverns.custom`, a first-person 3D maze game in 15 KB. **The home page's arcade lists every game in the `games/`
+  folder**: add a game by putting a folder with a `game.wasm` there (see `games/README.md`). To write your own, follow the step-by-step tutorial in
+  `docs/26-game-tutorial.md` (code in `examples/games/`); `kickl game-check` measures a game against the budget and `kickl games` shows what the browser found.
+  Reference: `docs/22-wasm-games.md`.
 - **Public and protected content.** Page text and public blobs are encrypted at rest but open to every reader;
   `access="protected"` blobs need the site's access key. See `docs/20`.
 
